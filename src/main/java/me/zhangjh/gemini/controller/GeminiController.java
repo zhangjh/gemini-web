@@ -17,10 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 /**
  * @author njhxzhangjihong@126.com
@@ -59,7 +57,7 @@ public class GeminiController {
         PrintWriter writer = response.getWriter();
         String text = request.getText();
         List<ChatContent> context = request.getContext();
-        geminiService.StreamChat(text, context, res -> {
+        geminiService.streamChat(text, context, res -> {
             writer.write(res);
             writer.flush();
             return null;
