@@ -3,10 +3,14 @@ package me.zhangjh.gemini.service;
 import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import me.zhangjh.gemini.client.GeminiService;
+import me.zhangjh.gemini.request.ChatContent;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -31,6 +35,11 @@ public class XFSpeechService {
     private static final String HOST_URL = "https://iat-api.xfyun.cn/v2/iat";
     private static final String API_SECRET = "3760b5e9bd1b5cf4bd1379551b925cc4";
     private static final String APP_KEY = "311d42a308bcca3807b4a4e457bd1ece";
+
+    private List<String> bufferList = new ArrayList<>();
+
+    @Autowired
+    private GeminiService geminiService;
 
     public String getAuthUrl() throws Exception {
         URL url = new URL(HOST_URL);
@@ -71,6 +80,7 @@ public class XFSpeechService {
             if(StringUtils.isNotEmpty(newContent)) {
                 // todo: 在此执行后续的内容召回，curContent为每次最新的流式结果输出
                 log.info("curContent: {}", curContent[0]);
+                bufferList.add(curContent[0]);
             }
             return null;
         }));
@@ -92,6 +102,7 @@ public class XFSpeechService {
             return;
         }
         handleVoiceData(fs, client, request);
+        executeGeminiTask();
     }
 
     private void recordTest(OkHttpClient client, Request request) throws LineUnavailableException {
@@ -113,9 +124,26 @@ public class XFSpeechService {
                 log.info("recordTest speech: {}", speech);
                 if(speech) {
                     handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
+                } else {
+                    // 清空bufferList
+                    if(CollectionUtils.isNotEmpty(bufferList)) {
+                        executeGeminiTask();
+                        bufferList = new ArrayList<>();
+                    }
                 }
             }
         }
+    }
+
+    private void executeGeminiTask() {
+        String question = String.join("", bufferList);
+        log.info("question: {}", question);
+        // todo: 构建上下文
+        List<ChatContent> context = new ArrayList<>();
+        geminiService.streamChat(question, context,  (res) -> {
+            log.info("gemini res: {}", res);
+            return null;
+        });
     }
 
     @PostConstruct
@@ -128,6 +156,7 @@ public class XFSpeechService {
         Request request = new Request.Builder().url(url).build();
 
         fileTest(client, request);
+        Thread.sleep(10000);
         recordTest(client, request);
     }
 }
