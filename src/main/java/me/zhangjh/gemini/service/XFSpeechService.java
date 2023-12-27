@@ -81,12 +81,15 @@ public class XFSpeechService {
         FileInputStream fs = new FileInputStream(file);
         byte[] data = new byte[1024];
         try {
-             fs.read(data);
-            VAD vad = new VAD();
-            boolean speech = vad.isSpeech(data);
-            log.info("speech: {}", speech);
+            int read = fs.read(data);
+            if(read > 0) {
+                VAD vad = new VAD();
+                boolean speech = vad.isSpeech(data);
+                log.info("fileTest speech: {}", speech);
+            }
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("read exception: ", e);
+            return;
         }
         handleVoiceData(fs, client, request);
     }
@@ -105,10 +108,9 @@ public class XFSpeechService {
         while (true) {
             int len = microphone.read(data, 0, data.length);
             if (len > 0) {
-//                WebRTCVad vad = new WebRTCVad(16000, 1);
-//                boolean speech = vad.isSpeech(data);
                 VAD vad = new VAD();
                 boolean speech = vad.isSpeech(data);
+                log.info("recordTest speech: {}", speech);
                 if(speech) {
                     handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
                 }
@@ -126,6 +128,6 @@ public class XFSpeechService {
         Request request = new Request.Builder().url(url).build();
 
         fileTest(client, request);
-//        recordTest(client, request);
+        recordTest(client, request);
     }
 }
