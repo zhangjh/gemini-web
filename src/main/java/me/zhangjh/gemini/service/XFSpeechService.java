@@ -163,7 +163,7 @@ public class XFSpeechService {
                 .replace("https://", "wss://");
         Request request = new Request.Builder().url(url).build();
 
-        fileTest(client, request);
+//        fileTest(client, request);
         Thread.sleep(10000);
 //        recordTest(client, request);
     }
