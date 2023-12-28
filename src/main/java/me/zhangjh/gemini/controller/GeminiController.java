@@ -59,6 +59,7 @@ public class GeminiController {
         String text = request.getText();
         List<ChatContent> context = request.getContext();
         geminiService.streamChat(text, context, res -> {
+            log.info("res: {}", res);
             writer.write(res);
             writer.flush();
             return null;
