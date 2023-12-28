@@ -1,7 +1,6 @@
 package me.zhangjh.gemini.service;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.client.GeminiService;
@@ -82,12 +81,12 @@ public class XFSpeechService {
         try {
             int read = fs.read(data);
             if(read > 0) {
-                VAD vad = new VAD();
-                boolean speech = vad.isSpeech(data);
-                log.info("fileTest speech: {}", speech);
-                if (speech) {
+//                VAD vad = new VAD();
+//                boolean speech = vad.isSpeech(data);
+//                log.info("fileTest speech: {}", speech);
+//                if (speech) {
                     handleVoiceData(fs, client, request);
-                }
+//                }
             }
         } catch (IOException e) {
             log.error("read exception: ", e);
@@ -108,12 +107,12 @@ public class XFSpeechService {
         while (true) {
             int len = microphone.read(data, 0, data.length);
             if (len > 0) {
-                VAD vad = new VAD();
-                boolean speech = vad.isSpeech(data);
-                if(speech) {
+//                VAD vad = new VAD();
+//                boolean speech = vad.isSpeech(data);
+//                if(speech) {
                     log.info("recordTest speech true");
                     handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
-                }
+//                }
             }
         }
     }
@@ -140,7 +139,7 @@ public class XFSpeechService {
         Request request = new Request.Builder().url(url).build();
 
         fileTest(client, request);
-        Thread.sleep(10000);
+//        Thread.sleep(10000);
 //        recordTest(client, request);
     }
 }
