@@ -164,7 +164,7 @@ public class XFSpeechService {
         Request request = new Request.Builder().url(url).build();
 
         fileTest(client, request);
-//        Thread.sleep(10000);
-//        recordTest(client, request);
+        Thread.sleep(10000);
+        recordTest(client, request);
     }
 }
