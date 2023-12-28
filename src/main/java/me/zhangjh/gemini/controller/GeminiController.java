@@ -51,7 +51,7 @@ public class GeminiController {
      * 优先使用该接口，支持多轮对话且流式返回
      * */
     @PostMapping(value = "/generateStream")
-    public Response<Void> generateStream(@RequestBody GeminiRequest request, HttpServletResponse response)
+    public void generateStream(@RequestBody GeminiRequest request, HttpServletResponse response)
             throws IOException {
         response.setContentType("text/plain;charset=UTF-8");
         response.setCharacterEncoding("UTF-8");
@@ -63,7 +63,6 @@ public class GeminiController {
             writer.flush();
             return null;
         });
-        return Response.success(null);
     }
 
     @PostMapping("/multiTurn")
