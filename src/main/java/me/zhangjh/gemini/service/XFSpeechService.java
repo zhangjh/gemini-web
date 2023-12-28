@@ -75,18 +75,6 @@ public class XFSpeechService {
         }));
     }
 
-    private TargetDataLine startRecording() throws LineUnavailableException {
-        AudioFormat format = new AudioFormat(16000, 16, 1, true, false);
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-        if (!AudioSystem.isLineSupported(info)) {
-            throw new RuntimeException("Line not support");
-        }
-        TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
-        microphone.open(format, microphone.getBufferSize());
-        microphone.start();
-        return microphone;
-    }
-
     private void fileTest(OkHttpClient client, Request request) throws FileNotFoundException {
         File file = new File("src/main/resources/test.pcm");
         FileInputStream fs = new FileInputStream(file);
@@ -107,7 +95,14 @@ public class XFSpeechService {
     }
 
     private void recordTest(OkHttpClient client, Request request) throws LineUnavailableException {
-        TargetDataLine microphone = startRecording();
+        AudioFormat format = new AudioFormat(16000, 16, 1, true, false);
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+        if (!AudioSystem.isLineSupported(info)) {
+            throw new RuntimeException("Line not support");
+        }
+        TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
+        microphone.open(format, microphone.getBufferSize());
+        microphone.start();
         byte[] data = new byte[microphone.getBufferSize()];
 
         while (true) {
