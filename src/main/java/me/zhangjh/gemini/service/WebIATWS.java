@@ -143,7 +143,7 @@ public class WebIATWS extends WebSocketListener {
                     try {
                         DECODER.decode(te);
                         // 中间识别结果
-                        log.info("中间结果输出耗时：{}", sw.elapsed());
+//                        log.info("中间结果输出耗时：{}", sw.elapsed());
 //                        this.cb.apply(DECODER.toString());
                     } catch (Exception e) {
                         log.error("decode exception: ", e);
@@ -151,8 +151,7 @@ public class WebIATWS extends WebSocketListener {
                 }
                 if (resp.getData().getStatus() == 2) {
                     // resp.data.status ==2 说明数据全部返回完毕，可以关闭连接，释放资源
-                    log.info("耗时：{}", sw.elapsed());
-                    log.info("最终识别结果: {}", DECODER);
+                    log.info("最终识别结果: {}, 耗时: {}", DECODER, sw.elapsed());
                     try {
                         this.cb.apply(DECODER.toString());
                     } catch (Exception e) {

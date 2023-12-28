@@ -35,8 +35,6 @@ public class XFSpeechService {
     private static final String API_SECRET = "3760b5e9bd1b5cf4bd1379551b925cc4";
     private static final String APP_KEY = "311d42a308bcca3807b4a4e457bd1ece";
 
-    private List<String> bufferList = new ArrayList<>();
-
     @Autowired
     private GeminiService geminiService;
 
@@ -69,7 +67,7 @@ public class XFSpeechService {
             log.info("content: {}", content);
             if(StringUtils.isNotEmpty(content)) {
                 // todo: 在此执行后续的内容召回，curContent为每次最新的流式结果输出
-                executeGeminiTask();
+                executeGeminiTask(content);
             }
             return null;
         }));
@@ -123,8 +121,7 @@ public class XFSpeechService {
         }
     }
 
-    private void executeGeminiTask() {
-        String question = String.join("", bufferList);
+    private void executeGeminiTask(String question) {
         log.info("question: {}", question);
         // todo: 构建上下文
         List<ChatContent> context = new ArrayList<>();
