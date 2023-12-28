@@ -1,10 +1,12 @@
 package me.zhangjh.gemini.service;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.client.GeminiService;
 import me.zhangjh.gemini.pojo.ChatContent;
+import me.zhangjh.gemini.response.TextResponse;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -113,8 +115,8 @@ public class XFSpeechService {
             if (len > 0) {
                 VAD vad = new VAD();
                 boolean speech = vad.isSpeech(data);
-                log.info("recordTest speech: {}", speech);
                 if(speech) {
+                    log.info("recordTest speech true");
                     handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
                 }
             }
@@ -125,6 +127,8 @@ public class XFSpeechService {
         log.info("question: {}", question);
         // todo: 构建上下文
         List<ChatContent> context = new ArrayList<>();
+        TextResponse textResponse = geminiService.generateByText(question);
+        log.info("textRes: {}", JSONObject.toJSONString(textResponse));
         geminiService.streamChat(question, context,  (res) -> {
             log.info("gemini res: {}", res);
             return null;
