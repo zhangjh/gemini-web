@@ -144,7 +144,7 @@ public class WebIATWS extends WebSocketListener {
                         DECODER.decode(te);
                         // 中间识别结果
                         log.info("中间结果输出耗时：{}", sw.elapsed());
-                        this.cb.apply(DECODER.toString());
+//                        this.cb.apply(DECODER.toString());
                     } catch (Exception e) {
                         log.error("decode exception: ", e);
                     }

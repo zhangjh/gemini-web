@@ -8,7 +8,6 @@ import me.zhangjh.gemini.pojo.ChatContent;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -66,21 +65,11 @@ public class XFSpeechService {
     }
 
     private void handleVoiceData(InputStream in, OkHttpClient client, Request request) {
-        final String[] preContent = {""};
-        final String[] curContent = {""};
         client.newWebSocket(request, new WebIATWS(in, content -> {
             log.info("content: {}", content);
-            if(content.length() < preContent[0].length()) {
-                return null;
-            }
-            curContent[0] = content.substring(preContent[0].length());
-            preContent[0] = content;
-            String newContent = curContent[0];
-            // 返回内容无变化可以忽略
-            if(StringUtils.isNotEmpty(newContent)) {
+            if(StringUtils.isNotEmpty(content)) {
                 // todo: 在此执行后续的内容召回，curContent为每次最新的流式结果输出
-                log.info("curContent: {}", curContent[0]);
-                bufferList.add(curContent[0]);
+                executeGeminiTask();
             }
             return null;
         }));
@@ -110,12 +99,6 @@ public class XFSpeechService {
                 log.info("fileTest speech: {}", speech);
                 if (speech) {
                     handleVoiceData(fs, client, request);
-                } else {
-                    // 调用&清空bufferList
-                    if(CollectionUtils.isNotEmpty(bufferList)) {
-                        executeGeminiTask();
-                        bufferList = new ArrayList<>();
-                    }
                 }
             }
         } catch (IOException e) {
@@ -135,12 +118,6 @@ public class XFSpeechService {
                 log.info("recordTest speech: {}", speech);
                 if(speech) {
                     handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
-                } else {
-                    // 调用&清空bufferList
-                    if(CollectionUtils.isNotEmpty(bufferList)) {
-                        executeGeminiTask();
-                        bufferList = new ArrayList<>();
-                    }
                 }
             }
         }
