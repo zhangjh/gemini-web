@@ -86,6 +86,18 @@ public class XFSpeechService {
         }));
     }
 
+    private TargetDataLine startRecording() throws LineUnavailableException {
+        AudioFormat format = new AudioFormat(16000, 16, 1, true, false);
+        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
+        if (!AudioSystem.isLineSupported(info)) {
+            throw new RuntimeException("Line not support");
+        }
+        TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
+        microphone.open(format, microphone.getBufferSize());
+        microphone.start();
+        return microphone;
+    }
+
     private void fileTest(OkHttpClient client, Request request) throws FileNotFoundException {
         File file = new File("src/main/resources/test.pcm");
         FileInputStream fs = new FileInputStream(file);
@@ -96,25 +108,23 @@ public class XFSpeechService {
                 VAD vad = new VAD();
                 boolean speech = vad.isSpeech(data);
                 log.info("fileTest speech: {}", speech);
+                if (speech) {
+                    handleVoiceData(fs, client, request);
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException ignored) {
+                    }
+                    executeGeminiTask();
+                }
             }
         } catch (IOException e) {
             log.error("read exception: ", e);
-            return;
         }
-        handleVoiceData(fs, client, request);
-        executeGeminiTask();
     }
 
     private void recordTest(OkHttpClient client, Request request) throws LineUnavailableException {
-        AudioFormat format = new AudioFormat(16000, 16, 1, true, false);
-        DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-        if (!AudioSystem.isLineSupported(info)) {
-            throw new RuntimeException("Line not support");
-        }
-        TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
+        TargetDataLine microphone = startRecording();
         byte[] data = new byte[microphone.getBufferSize()];
-        microphone.open(format, microphone.getBufferSize());
-        microphone.start();
 
         while (true) {
             int len = microphone.read(data, 0, data.length);
@@ -125,7 +135,7 @@ public class XFSpeechService {
                 if(speech) {
                     handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
                 } else {
-                    // 清空bufferList
+                    // 调用&清空bufferList
                     if(CollectionUtils.isNotEmpty(bufferList)) {
                         executeGeminiTask();
                         bufferList = new ArrayList<>();
