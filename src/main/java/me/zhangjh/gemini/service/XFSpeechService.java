@@ -141,6 +141,6 @@ public class XFSpeechService {
 
         fileTest(client, request);
         Thread.sleep(10000);
-        recordTest(client, request);
+//        recordTest(client, request);
     }
 }
