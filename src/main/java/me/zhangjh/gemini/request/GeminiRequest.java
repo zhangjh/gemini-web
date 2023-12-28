@@ -1,6 +1,7 @@
 package me.zhangjh.gemini.request;
 
 import lombok.Data;
+import me.zhangjh.gemini.pojo.ChatContent;
 
 import java.util.List;
 

@@ -4,11 +4,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.client.GeminiService;
 import me.zhangjh.gemini.pojo.Candidate;
+import me.zhangjh.gemini.pojo.ChatContent;
 import me.zhangjh.gemini.pojo.Content;
 import me.zhangjh.gemini.pojo.Part;
-import me.zhangjh.gemini.request.ChatContent;
 import me.zhangjh.gemini.request.GeminiRequest;
 import me.zhangjh.gemini.response.TextResponse;
+import me.zhangjh.share.response.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,7 +35,7 @@ public class GeminiController {
     private GeminiService geminiService;
 
     @PostMapping("/generateByText")
-    public String generateByText(@RequestBody GeminiRequest request) {
+    public Response<String> generateByText(@RequestBody GeminiRequest request) {
         TextResponse textResponse = geminiService.generateByText(request.getText());
         List<String> res = new ArrayList<>();
         for (Candidate candidate : textResponse.getCandidates()) {
@@ -43,14 +44,14 @@ public class GeminiController {
                 res.add(part.getText());
             }
         }
-        return String.join("", res);
+        return Response.success(String.join("", res));
     }
 
     /**
      * 优先使用该接口，支持多轮对话且流式返回
      * */
     @PostMapping(value = "/generateStream")
-    public void generateStream(@RequestBody GeminiRequest request, HttpServletResponse response)
+    public Response<Void> generateStream(@RequestBody GeminiRequest request, HttpServletResponse response)
             throws IOException {
         response.setContentType("text/plain;charset=UTF-8");
         response.setCharacterEncoding("UTF-8");
@@ -62,11 +63,12 @@ public class GeminiController {
             writer.flush();
             return null;
         });
-
+        return Response.success(null);
     }
 
     @PostMapping("/multiTurn")
-    public String multiTurn(@RequestBody GeminiRequest request) {
-        return geminiService.multiTurnChat(request.getText(), request.getContext());
+    public Response<String> multiTurn(@RequestBody GeminiRequest request) {
+        String chatRes = geminiService.multiTurnChat(request.getText(), request.getContext());
+        return Response.success(chatRes);
     }
 }

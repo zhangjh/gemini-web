@@ -4,7 +4,7 @@ import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.client.GeminiService;
-import me.zhangjh.gemini.request.ChatContent;
+import me.zhangjh.gemini.pojo.ChatContent;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;

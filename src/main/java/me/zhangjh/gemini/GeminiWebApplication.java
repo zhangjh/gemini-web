@@ -8,6 +8,7 @@ import org.springframework.context.annotation.ComponentScan;
  * @author zhangjh
  */
 @SpringBootApplication
+@ComponentScan(basePackages = {"me.zhangjh"})
 public class GeminiWebApplication {
 
     public static void main(String[] args) {
