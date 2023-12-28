@@ -3,14 +3,15 @@ package me.zhangjh.gemini.service;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import me.zhangjh.gemini.client.GeminiService;
+import me.zhangjh.gemini.common.RoleEnum;
 import me.zhangjh.gemini.pojo.ChatContent;
-import me.zhangjh.gemini.response.TextResponse;
+import me.zhangjh.gemini.request.GeminiRequest;
+import me.zhangjh.gemini.request.HttpRequest;
+import me.zhangjh.gemini.util.HttpClientUtil;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -36,8 +37,16 @@ public class XFSpeechService {
     private static final String API_SECRET = "3760b5e9bd1b5cf4bd1379551b925cc4";
     private static final String APP_KEY = "311d42a308bcca3807b4a4e457bd1ece";
 
-    @Autowired
-    private GeminiService geminiService;
+    private static final String GEMINI_WEB_URL = "http://wx.zhangjh.me:8080/gemini/generateStream";
+
+    /**
+     * maximum 10, role user & model as one, need 2 elements
+     * */
+    private static final int MAX_CHAT_CONTEXT = 20;
+    /**
+     * chat context
+     * */
+    private List<ChatContent> context = new ArrayList<>(MAX_CHAT_CONTEXT);
 
     public String getAuthUrl() throws Exception {
         URL url = new URL(HOST_URL);
@@ -119,12 +128,28 @@ public class XFSpeechService {
 
     private void executeGeminiTask(String question) {
         log.info("question: {}", question);
-        // todo: 构建上下文
-        List<ChatContent> context = new ArrayList<>();
-        TextResponse textResponse = geminiService.generateByText(question);
-        log.info("textRes: {}", JSONObject.toJSONString(textResponse));
-        geminiService.streamChat(question, context,  (res) -> {
-            log.info("gemini res: {}", res);
+        // 调用远端http服务
+        HttpRequest httpRequest = new HttpRequest(GEMINI_WEB_URL);
+        GeminiRequest geminiRequest = new GeminiRequest();
+        geminiRequest.setText(question);
+        geminiRequest.setContext(context);
+        httpRequest.setReqData(JSONObject.toJSONString(geminiRequest));
+        StringBuilder answerBuffer = new StringBuilder();
+        HttpClientUtil.sendStream(httpRequest, response -> {
+            log.info("response: {}", response);
+            if(StringUtils.isNotEmpty(response)) {
+                answerBuffer.append(response);
+                if(Objects.equals(response, "[done]")) {
+                    String answer = answerBuffer.toString();
+                    // maximum 10, remove oldest two
+                    if(context.size() == MAX_CHAT_CONTEXT) {
+                        context.remove(1);
+                        context.remove(0);
+                    }
+                    context.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
+                    context.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
+                }
+            }
             return null;
         });
     }
