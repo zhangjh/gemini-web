@@ -82,6 +82,7 @@ public class XFSpeechService {
                 log.info("curContent: {}", curContent[0]);
                 bufferList.add(curContent[0]);
             }
+            executeGeminiTask();
             return null;
         }));
     }
@@ -110,11 +111,6 @@ public class XFSpeechService {
                 log.info("fileTest speech: {}", speech);
                 if (speech) {
                     handleVoiceData(fs, client, request);
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException ignored) {
-                    }
-                    executeGeminiTask();
                 }
             }
         } catch (IOException e) {
