@@ -1,6 +1,7 @@
 package me.zhangjh.gemini.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.common.RoleEnum;
@@ -17,7 +18,9 @@ import org.springframework.stereotype.Component;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.sound.sampled.*;
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -31,13 +34,29 @@ import java.util.*;
  */
 @Slf4j
 @Component
-public class XFSpeechService {
+public class XfSpeechService {
 
     private static final String HOST_URL = "https://iat-api.xfyun.cn/v2/iat";
     private static final String API_SECRET = "3760b5e9bd1b5cf4bd1379551b925cc4";
     private static final String APP_KEY = "311d42a308bcca3807b4a4e457bd1ece";
 
     private static final String GEMINI_WEB_URL = "http://wx.zhangjh.me:8080/gemini/generateStream";
+
+    private static final List<String> WAKEUP_WORDS = Arrays.asList("小张小张", "小张同学", "你好小张");
+
+    private static final OkHttpClient CLIENT;
+    private static final Request REQUEST;
+    private static final VAD VAD_INSTANCE;
+
+    static {
+        CLIENT = new OkHttpClient.Builder().build();
+        String authUrl = getAuthUrl();
+        String url = authUrl
+                .replace("http://", "ws://")
+                .replace("https://", "wss://");
+        REQUEST = new Request.Builder().url(url).build();
+        VAD_INSTANCE = new VAD();
+    }
 
     /**
      * maximum 10, role user & model as one, need 2 elements
@@ -46,20 +65,32 @@ public class XFSpeechService {
     /**
      * chat context
      * */
-    private List<ChatContent> context = new ArrayList<>(MAX_CHAT_CONTEXT);
+    private final List<ChatContent> context = new ArrayList<>(MAX_CHAT_CONTEXT);
 
-    public String getAuthUrl() throws Exception {
-        URL url = new URL(HOST_URL);
+    private StringBuilder contentBuffer = new StringBuilder();
+
+    private static String getAuthUrl() {
+        URL url = null;
+        try {
+            url = new URL(HOST_URL);
+        } catch (MalformedURLException ignored) {
+        }
         SimpleDateFormat format = new SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss z", Locale.US);
         format.setTimeZone(TimeZone.getTimeZone("GMT"));
         String date = format.format(new Date());
+        assert url != null;
         String builder = "host: " + url.getHost() + "\n" +
                 "date: " + date + "\n" +
                 "GET " + url.getPath() + " HTTP/1.1";
         Charset charset = StandardCharsets.UTF_8;
-        Mac mac = Mac.getInstance("hmacsha256");
-        SecretKeySpec spec = new SecretKeySpec(API_SECRET.getBytes(charset), "hmacsha256");
-        mac.init(spec);
+        Mac mac = null;
+        try {
+            mac = Mac.getInstance("hmacsha256");
+            SecretKeySpec spec = new SecretKeySpec(API_SECRET.getBytes(charset), "hmacsha256");
+            mac.init(spec);
+        } catch (Exception ignored) {
+        }
+        assert mac != null;
         byte[] hexDigits = mac.doFinal(builder.getBytes(charset));
         String sha = Base64.getEncoder().encodeToString(hexDigits);
 
@@ -72,57 +103,69 @@ public class XFSpeechService {
         return httpUrl.toString();
     }
 
-    private void handleVoiceData(InputStream in, OkHttpClient client, Request request) {
-        client.newWebSocket(request, new WebIATWS(in, content -> {
+    private void handleVoiceData(InputStream in) {
+        CLIENT.newWebSocket(REQUEST, new WebIATWS(in, content -> {
             log.info("content: {}", content);
             if(StringUtils.isNotEmpty(content)) {
-                // todo: 在此执行后续的内容召回，curContent为每次最新的流式结果输出
-                executeGeminiTask(content);
+                contentBuffer.append(content);
             }
             return null;
         }));
     }
 
-    private void fileTest(OkHttpClient client, Request request) throws FileNotFoundException {
-        File file = new File("src/main/resources/test.pcm");
-        FileInputStream fs = new FileInputStream(file);
-        byte[] data = new byte[1024];
-        try {
-            int read = fs.read(data);
-            if(read > 0) {
-//                VAD vad = new VAD();
-//                boolean speech = vad.isSpeech(data);
-//                log.info("fileTest speech: {}", speech);
-//                if (speech) {
-                    handleVoiceData(fs, client, request);
-//                }
-            }
-        } catch (IOException e) {
-            log.error("read exception: ", e);
-        }
-    }
-
-    private void recordTest(OkHttpClient client, Request request) throws LineUnavailableException {
+    /**
+     * 开启麦克风准备拾音，设备异常抛错
+     * */
+    private TargetDataLine startMicrophone() throws LineUnavailableException {
         AudioFormat format = new AudioFormat(16000, 16, 1, true, false);
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
         if (!AudioSystem.isLineSupported(info)) {
-            throw new RuntimeException("Line not support");
+            throw new RuntimeException("Line not support, may be there is no microphone exist.");
         }
         TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
         microphone.open(format, microphone.getBufferSize());
         microphone.start();
-        byte[] data = new byte[microphone.getBufferSize()];
+        return microphone;
+    }
 
-        while (true) {
-            int len = microphone.read(data, 0, data.length);
-            if (len > 0) {
-//                VAD vad = new VAD();
-//                boolean speech = vad.isSpeech(data);
-//                if(speech) {
-                    log.info("recordTest speech true");
-                    handleVoiceData(new ByteArrayInputStream(data, 0, len), client, request);
-//                }
+    /**
+     * 从麦克风读取数据
+     * */
+    private void readMicroPhoneData(TargetDataLine microPhone, byte[] data) {
+        int len = microPhone.read(data, 0, data.length);
+        if (len > 0) {
+            if(VAD_INSTANCE.isSpeech(data)) {
+                log.info("readMicroPhoneData speech true");
+                handleVoiceData(new ByteArrayInputStream(data, 0, len));
+            } else {
+                log.info("readMicroPhoneData speech false");
+                if(!contentBuffer.isEmpty()) {
+                    // 语音内容包括唤醒词，后续收音内容认为是问题
+                    for (String wakeupWord : WAKEUP_WORDS) {
+                        if(contentBuffer.toString().contains(wakeupWord)) {
+                            // todo: 播放唤醒应答，开始收音问题
+                            contentBuffer = new StringBuilder();
+                            while (microPhone.read(data, 0, data.length) > 0) {
+                                if(VAD_INSTANCE.isSpeech(data)) {
+                                    handleVoiceData(new ByteArrayInputStream(data, 0, len));
+                                } else {
+                                    // 问题结束，开始干活
+                                    executeGeminiTask(contentBuffer.toString());
+                                    contentBuffer = new StringBuilder();
+                                }
+                            }
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    private void recordTask() throws LineUnavailableException {
+        TargetDataLine microphone = startMicrophone();
+        byte[] data = new byte[microphone.getBufferSize()];
+        while (microphone.read(data, 0, data.length) > 0) {
+            readMicroPhoneData(microphone, data);
         }
     }
 
@@ -137,6 +180,7 @@ public class XFSpeechService {
         StringBuilder answerBuffer = new StringBuilder();
         HttpClientUtil.sendStream(httpRequest, response -> {
             log.info("response: {}", response);
+            // todo: tts流式播放内容
             if(StringUtils.isNotEmpty(response)) {
                 answerBuffer.append(response);
                 if(Objects.equals(response, "[done]")) {
@@ -156,15 +200,7 @@ public class XFSpeechService {
 
     @PostConstruct
     public void init() throws Exception {
-        OkHttpClient client = new OkHttpClient.Builder().build();
-        String authUrl = getAuthUrl();
-        String url = authUrl
-                .replace("http://", "ws://")
-                .replace("https://", "wss://");
-        Request request = new Request.Builder().url(url).build();
-
-//        fileTest(client, request);
-        Thread.sleep(10000);
-//        recordTest(client, request);
+        // 启动常驻后台任务
+        recordTask();
     }
 }
