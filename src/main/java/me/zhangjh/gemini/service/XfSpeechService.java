@@ -8,6 +8,8 @@ import me.zhangjh.gemini.common.RoleEnum;
 import me.zhangjh.gemini.pojo.ChatContent;
 import me.zhangjh.gemini.request.GeminiRequest;
 import me.zhangjh.gemini.request.HttpRequest;
+import me.zhangjh.gemini.tools.AudioPlayer;
+import me.zhangjh.gemini.tools.Text2Speech;
 import me.zhangjh.gemini.util.HttpClientUtil;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
@@ -26,6 +28,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * @author njhxzhangjihong@126.com
@@ -47,6 +50,8 @@ public class XfSpeechService {
     private static final OkHttpClient CLIENT;
     private static final Request REQUEST;
     private static final VAD VAD_INSTANCE;
+
+    private static final List<String> truncationSymbols = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
 
     static {
         CLIENT = new OkHttpClient.Builder().build();
@@ -143,7 +148,8 @@ public class XfSpeechService {
                     // 语音内容包括唤醒词，后续收音内容认为是问题
                     for (String wakeupWord : WAKEUP_WORDS) {
                         if(contentBuffer.toString().contains(wakeupWord)) {
-                            // todo: 播放唤醒应答，开始收音问题
+                            // 播放唤醒应答，开始收音问题
+                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
                             contentBuffer = new StringBuilder();
                             while (microPhone.read(data, 0, data.length) > 0) {
                                 if(VAD_INSTANCE.isSpeech(data)) {
@@ -178,11 +184,13 @@ public class XfSpeechService {
         geminiRequest.setContext(context);
         httpRequest.setReqData(JSONObject.toJSONString(geminiRequest));
         StringBuilder answerBuffer = new StringBuilder();
+        AtomicReference<StringBuilder> ttsBuffer = new AtomicReference<>(new StringBuilder());
         HttpClientUtil.sendStream(httpRequest, response -> {
             log.info("response: {}", response);
             // todo: tts流式播放内容
             if(StringUtils.isNotEmpty(response)) {
                 answerBuffer.append(response);
+                // 结束标记
                 if(Objects.equals(response, "[done]")) {
                     String answer = answerBuffer.toString();
                     // maximum 10, remove oldest two
@@ -192,6 +200,17 @@ public class XfSpeechService {
                     }
                     context.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
                     context.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
+                } else {
+                    // 流式答案
+                    ttsBuffer.get().append(response);
+                    if(truncationSymbols.contains(response)) {
+                        // 将当前ttsBuffer的内容拿去做tts转换，播放，清空ttsBuffer
+                        if(!ttsBuffer.get().isEmpty()) {
+                            String mp3 = new Text2Speech().toTtsMp3(ttsBuffer.toString());
+                            AudioPlayer.playMp3(mp3);
+                            ttsBuffer.set(new StringBuilder());
+                        }
+                    }
                 }
             }
             return null;
