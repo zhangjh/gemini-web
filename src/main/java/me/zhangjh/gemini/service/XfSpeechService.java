@@ -219,6 +219,7 @@ public class XfSpeechService {
 
     @PostConstruct
     public void init() throws Exception {
+        AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
         // 启动常驻后台任务
         recordTask();
     }

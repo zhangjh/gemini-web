@@ -2,6 +2,7 @@ package me.zhangjh.gemini.tools;
 
 
 import javazoom.jl.player.Player;
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.FileInputStream;
 
@@ -10,9 +11,11 @@ import java.io.FileInputStream;
  * @date 10:27 2023/12/29
  * @Description
  */
+@Slf4j
 public class AudioPlayer {
 
     public static void playMp3(String file) {
+        log.info("play file: {}", file);
         try {
             Player player = new Player(new FileInputStream(file));
             player.play();
