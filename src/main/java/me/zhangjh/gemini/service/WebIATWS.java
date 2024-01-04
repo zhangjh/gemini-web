@@ -162,7 +162,7 @@ public class WebIATWS extends WebSocketListener {
                         log.error("decode exception: ", e);
                     }
                     DECODER.discard();
-//                    webSocket.close(1000, "");
+                    webSocket.close(1000, "");
                 }
             }
         }
