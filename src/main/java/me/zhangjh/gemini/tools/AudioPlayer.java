@@ -5,6 +5,9 @@ import javazoom.jl.player.Player;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.FileInputStream;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author njhxzhangjihong@126.com
@@ -14,15 +17,29 @@ import java.io.FileInputStream;
 @Slf4j
 public class AudioPlayer {
 
+    private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
+
+    private static AtomicInteger runningTasks = new AtomicInteger(0);
+
     public static void playMp3(String file) {
         log.info("play file: {}", file);
-        try {
-            Player player = new Player(new FileInputStream(file));
-            player.play();
-        } catch (Exception e) {
-            throw new RuntimeException("播放MP3异常：", e);
-        }
+        EXECUTOR_SERVICE.submit(() -> {
+            runningTasks.incrementAndGet();
+            try {
+                Player player = new Player(new FileInputStream(file));
+                player.play();
+            } catch (Exception e) {
+                throw new RuntimeException("播放MP3异常：", e);
+            }
+        });
+    }
 
+    public static void stop() {
+        Thread.currentThread().interrupt();
+    }
+
+    public static boolean isPlaying() {
+        return runningTasks.get() > 0;
     }
 
     public static void main(String[] args) {

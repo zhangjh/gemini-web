@@ -21,13 +21,16 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import javax.sound.sampled.*;
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -47,11 +50,13 @@ public class XfSpeechService {
 
     private static final List<String> WAKEUP_WORDS = Arrays.asList("小张小张", "小张同学", "你好小张");
 
+    private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
+
     private static final OkHttpClient CLIENT;
     private static final Request REQUEST;
     private static final VAD VAD_INSTANCE;
 
-    private static final List<String> truncationSymbols = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
+    private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
 
     static {
         CLIENT = new OkHttpClient.Builder().build();
@@ -72,7 +77,15 @@ public class XfSpeechService {
      * */
     private final List<ChatContent> context = new ArrayList<>(MAX_CHAT_CONTEXT);
 
-    private StringBuilder contentBuffer = new StringBuilder();
+    /**
+     * 录音数据流缓冲区
+     * */
+    private ByteArrayOutputStream bos = new ByteArrayOutputStream();
+
+    /**
+     * 用来保存是否已被唤醒
+     * */
+    private boolean wakedFlag = false;
 
     private static String getAuthUrl() {
         URL url = null;
@@ -108,16 +121,6 @@ public class XfSpeechService {
         return httpUrl.toString();
     }
 
-    private void handleVoiceData(InputStream in) {
-        CLIENT.newWebSocket(REQUEST, new WebIATWS(in, content -> {
-            log.info("content: {}", content);
-            if(StringUtils.isNotEmpty(content)) {
-                contentBuffer.append(content);
-            }
-            return null;
-        }));
-    }
-
     /**
      * 开启麦克风准备拾音，设备异常抛错
      * */
@@ -133,46 +136,80 @@ public class XfSpeechService {
         return microphone;
     }
 
-    /**
-     * 从麦克风读取数据
-     * */
-    private void readMicroPhoneData(TargetDataLine microPhone, byte[] data) {
-        int len = microPhone.read(data, 0, data.length);
-        if (len > 0) {
-            if(VAD_INSTANCE.isSpeech(data)) {
-                log.info("readMicroPhoneData speech true");
-                handleVoiceData(new ByteArrayInputStream(data, 0, len));
-            } else {
-                log.info("readMicroPhoneData speech false");
-                if(!contentBuffer.isEmpty()) {
-                    // 语音内容包括唤醒词，后续收音内容认为是问题
-                    for (String wakeupWord : WAKEUP_WORDS) {
-                        if(contentBuffer.toString().contains(wakeupWord)) {
-                            // 播放唤醒应答，开始收音问题
-                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
-                            contentBuffer = new StringBuilder();
-                            while (microPhone.read(data, 0, data.length) > 0) {
-                                if(VAD_INSTANCE.isSpeech(data)) {
-                                    handleVoiceData(new ByteArrayInputStream(data, 0, len));
-                                } else {
-                                    // 问题结束，开始干活
-                                    executeGeminiTask(contentBuffer.toString());
-                                    contentBuffer = new StringBuilder();
+    private boolean isSpeech(byte[] data) {
+        return VAD_INSTANCE.isSpeech(data);
+    }
+
+    private void recordTask() throws LineUnavailableException, IOException {
+        TargetDataLine microphone = startMicrophone();
+        // 录音状态，[前一状态，当前状态]
+        final int[] preState = {0};
+        final int[] curState = {0};
+        EXECUTOR_SERVICE.submit(() -> {
+            byte[] data = new byte[microphone.getBufferSize() / 5];
+            while (true) {
+                int read = microphone.read(data, 0, data.length);
+                if(read > 0) {
+                    // 不是语音，不处理，
+                    // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理
+                    if(isSpeech(data)) {
+                        // 当前正在播放时检测到人声，停止播放
+                        if(AudioPlayer.isPlaying()) {
+                            AudioPlayer.stop();
+                        }
+                        preState[0] = curState[0];
+                        curState[0] = 1;
+                        // 累积音频流
+                        bos.write(data, 0, read);
+                    } else {
+                        preState[0] = curState[0];
+                        curState[0] = 0;
+                        if(preState[0] == 1) {
+                            // 从语音到非语音，即状态数组为[1,0]时，证明累积到了一个正常的语音流
+                            CLIENT.newWebSocket(REQUEST, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
+                                log.info("content: {}", content);
+                                // 清空音频流缓冲区
+                                bos.reset();
+                                if(StringUtils.isNotEmpty(content)) {
+                                    // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
+                                    for (String wakeupWord : WAKEUP_WORDS) {
+                                        if(content.contains(wakeupWord)) {
+                                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                                            wakedFlag = true;
+                                            break;
+                                        }
+                                    }
+                                    if(wakedFlag) {
+                                        // 读取后续音频数据流，准备回答
+                                        ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
+                                        while (true) {
+                                            int readBytes = microphone.read(data, 0, data.length);
+                                            if(readBytes > 0) {
+                                                // 一直累积到收音结束
+                                                if(isSpeech(data)) {
+                                                    questionBos.write(data, 0, readBytes);
+                                                } else {
+                                                    CLIENT.newWebSocket(REQUEST,
+                                                            new WebIATWS(new ByteArrayInputStream(questionBos.toByteArray()), question -> {
+                                                                // 问题结束，开始干活
+                                                                executeGeminiTask(question);
+                                                                questionBos.reset();
+                                                                wakedFlag = false;
+                                                                return null;
+                                                            }));
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
-                            }
+                                return null;
+                            }));
                         }
                     }
                 }
             }
-        }
-    }
-
-    private void recordTask() throws LineUnavailableException {
-        TargetDataLine microphone = startMicrophone();
-        byte[] data = new byte[microphone.getBufferSize()];
-        while (microphone.read(data, 0, data.length) > 0) {
-            readMicroPhoneData(microphone, data);
-        }
+        });
     }
 
     private void executeGeminiTask(String question) {
@@ -187,7 +224,6 @@ public class XfSpeechService {
         AtomicReference<StringBuilder> ttsBuffer = new AtomicReference<>(new StringBuilder());
         HttpClientUtil.sendStream(httpRequest, response -> {
             log.info("response: {}", response);
-            // todo: tts流式播放内容
             if(StringUtils.isNotEmpty(response)) {
                 answerBuffer.append(response);
                 // 结束标记
@@ -203,7 +239,7 @@ public class XfSpeechService {
                 } else {
                     // 流式答案
                     ttsBuffer.get().append(response);
-                    if(truncationSymbols.contains(response)) {
+                    if(TRUNCATION_SYMBOLS.contains(response)) {
                         // 将当前ttsBuffer的内容拿去做tts转换，播放，清空ttsBuffer
                         if(!ttsBuffer.get().isEmpty()) {
                             String mp3 = new Text2Speech().toTtsMp3(ttsBuffer.toString());
@@ -218,9 +254,12 @@ public class XfSpeechService {
     }
 
     @PostConstruct
-    public void init() throws Exception {
-        AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+    public void init() {
         // 启动常驻后台任务
-        recordTask();
+        try {
+            recordTask();
+        } catch (LineUnavailableException | IOException e) {
+            e.printStackTrace();
+        }
     }
 }
