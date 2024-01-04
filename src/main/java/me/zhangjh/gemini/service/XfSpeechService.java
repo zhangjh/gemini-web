@@ -154,9 +154,9 @@ public class XfSpeechService {
                     // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理
                     if(isSpeech(data)) {
                         // 当前正在播放时检测到人声，停止播放
-                        if(AudioPlayer.isPlaying()) {
-                            AudioPlayer.stop();
-                        }
+//                        if(AudioPlayer.isPlaying()) {
+//                            AudioPlayer.stop();
+//                        }
                         preState[0] = curState[0];
                         curState[0] = 1;
                         // 累积音频流
