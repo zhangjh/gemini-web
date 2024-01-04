@@ -185,6 +185,7 @@ public class XfSpeechService {
                                         }
                                     }
                                     if(wakedFlag) {
+                                        log.info("waked, start collect question.");
                                         // 读取后续音频数据流，准备回答
                                         ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
                                         while (true) {
