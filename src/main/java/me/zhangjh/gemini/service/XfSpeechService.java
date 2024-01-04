@@ -137,6 +137,7 @@ public class XfSpeechService {
     }
 
     private boolean isSpeech(byte[] data) {
+        log.info("data: {}", data.length);
         return VAD_INSTANCE.isSpeech(data);
     }
 
