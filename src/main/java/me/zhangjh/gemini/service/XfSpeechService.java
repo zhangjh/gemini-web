@@ -175,6 +175,11 @@ public class XfSpeechService {
                                     for (String wakeupWord : WAKEUP_WORDS) {
                                         if(content.contains(wakeupWord)) {
                                             AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                                            // 播放的时候暂停收音一会儿
+                                            try {
+                                                Thread.sleep(1000);
+                                            } catch (InterruptedException ignored) {
+                                            }
                                             wakedFlag = true;
                                             break;
                                         }
