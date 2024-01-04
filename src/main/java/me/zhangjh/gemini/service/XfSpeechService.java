@@ -193,8 +193,10 @@ public class XfSpeechService {
                                             if(readBytes > 0) {
                                                 // 一直累积到收音结束
                                                 if(isSpeech(data)) {
+                                                    log.info("collecting question data");
                                                     questionBos.write(data, 0, readBytes);
                                                 } else {
+                                                    log.info("question ASR");
                                                     CLIENT.newWebSocket(REQUEST,
                                                             new WebIATWS(new ByteArrayInputStream(questionBos.toByteArray()), question -> {
                                                                 // 问题结束，开始干活
