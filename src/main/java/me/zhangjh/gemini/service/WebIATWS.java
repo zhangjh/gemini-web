@@ -10,6 +10,7 @@ import me.zhangjh.gemini.pojo.Text;
 import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -143,7 +144,7 @@ public class WebIATWS extends WebSocketListener {
                     try {
                         DECODER.decode(te);
                         // 中间识别结果
-//                        log.info("中间结果输出耗时：{}", sw.elapsed());
+                        log.info("中间结果输出：{}", DECODER);
 //                        this.cb.apply(DECODER.toString());
                     } catch (Exception e) {
                         log.error("decode exception: ", e);
@@ -151,14 +152,17 @@ public class WebIATWS extends WebSocketListener {
                 }
                 if (resp.getData().getStatus() == 2) {
                     // resp.data.status ==2 说明数据全部返回完毕，可以关闭连接，释放资源
-                    log.info("最终识别结果: {}, 耗时: {}", DECODER, sw.elapsed());
+                    String recognized = DECODER.toString();
+                    log.info("最终识别结果: {}, 耗时: {}", recognized, sw.elapsed());
                     try {
-                        this.cb.apply(DECODER.toString());
+                        if(StringUtils.isNotEmpty(recognized)) {
+                            this.cb.apply(recognized);
+                        }
                     } catch (Exception e) {
                         log.error("decode exception: ", e);
                     }
                     DECODER.discard();
-                    webSocket.close(1000, "");
+//                    webSocket.close(1000, "");
                 }
             }
         }

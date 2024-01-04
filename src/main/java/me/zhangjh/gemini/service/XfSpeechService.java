@@ -137,7 +137,6 @@ public class XfSpeechService {
     }
 
     private boolean isSpeech(byte[] data) {
-        log.info("data: {}", data.length);
         return VAD_INSTANCE.isSpeech(data);
     }
 
@@ -154,7 +153,6 @@ public class XfSpeechService {
                     // 不是语音，不处理，
                     // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理
                     if(isSpeech(data)) {
-                        log.info("readMicroPhoneData speech true");
                         // 当前正在播放时检测到人声，停止播放
                         if(AudioPlayer.isPlaying()) {
                             AudioPlayer.stop();
@@ -164,7 +162,6 @@ public class XfSpeechService {
                         // 累积音频流
                         bos.write(data, 0, read);
                     } else {
-                        log.info("readMicroPhoneData speech false");
                         preState[0] = curState[0];
                         curState[0] = 0;
                         if(preState[0] == 1) {
