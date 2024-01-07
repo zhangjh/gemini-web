@@ -84,11 +84,6 @@ public class XfSpeechService {
      * */
     private ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
-    /**
-     * 用来保存是否已被唤醒
-     * */
-    private boolean wakedFlag = false;
-
     private static String getAuthUrl() {
         URL url = null;
         try {
@@ -182,36 +177,32 @@ public class XfSpeechService {
                                                 Thread.sleep(1000);
                                             } catch (InterruptedException ignored) {
                                             }
-                                            wakedFlag = true;
-                                            break;
-                                        }
-                                    }
-                                    if (wakedFlag) {
-                                        log.info("waked, start collect question.");
-                                        // 读取后续音频数据流，准备回答
-                                        ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
-                                        while (true) {
-                                            int readBytes = microphone.read(data, 0, data.length);
-                                            log.info("read data 2");
-                                            if (readBytes > 0) {
-                                                // 一直累积到收音结束
-                                                if (isSpeech(data)) {
-                                                    log.info("collecting question data");
-                                                    questionBos.write(data, 0, readBytes);
-                                                } else {
-                                                    log.info("question ASR");
-                                                    CLIENT.newWebSocket(REQUEST,
-                                                            new WebIATWS(new ByteArrayInputStream(questionBos.toByteArray()), question -> {
-                                                                // 问题结束，开始干活
-                                                                log.info("start chat, question: {}", question);
-                                                                executeGeminiTask(question);
-                                                                questionBos.reset();
-                                                                wakedFlag = false;
-                                                                return null;
-                                                            }));
-                                                    break;
+                                            log.info("waked, start collect question.");
+                                            // 读取后续音频数据流，准备回答
+                                            ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
+                                            while (true) {
+                                                int readBytes = microphone.read(data, 0, data.length);
+                                                log.info("read data 2");
+                                                if (readBytes > 0) {
+                                                    // 一直累积到收音结束
+                                                    if (isSpeech(data)) {
+                                                        log.info("collecting question data");
+                                                        questionBos.write(data, 0, readBytes);
+                                                    } else {
+                                                        log.info("question ASR");
+                                                        CLIENT.newWebSocket(REQUEST,
+                                                                new WebIATWS(new ByteArrayInputStream(questionBos.toByteArray()), question -> {
+                                                                    // 问题结束，开始干活
+                                                                    log.info("start chat, question: {}", question);
+                                                                    executeGeminiTask(question);
+                                                                    questionBos.reset();
+                                                                    return null;
+                                                                }));
+                                                        break;
+                                                    }
                                                 }
                                             }
+                                            break;
                                         }
                                     }
                                 }
