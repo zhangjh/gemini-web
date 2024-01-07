@@ -14,6 +14,7 @@ import me.zhangjh.gemini.util.HttpClientUtil;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.WebSocket;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Component;
 
@@ -55,6 +56,7 @@ public class XfSpeechService {
     private static final OkHttpClient CLIENT;
     private static final Request REQUEST;
     private static final VAD VAD_INSTANCE;
+    private static WebSocket socket;
 
     private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
 
@@ -149,6 +151,7 @@ public class XfSpeechService {
             byte[] data = new byte[microphone.getBufferSize() / 5];
             while (true) {
                 int read = microphone.read(data, 0, data.length);
+                log.info("read data 1");
                 if(read > 0) {
                     // 不是语音，不处理，
                     // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理
@@ -166,14 +169,14 @@ public class XfSpeechService {
                         curState[0] = 0;
                         if(preState[0] == 1) {
                             // 从语音到非语音，即状态数组为[1,0]时，证明累积到了一个正常的语音流
-                            CLIENT.newWebSocket(REQUEST, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
+                            socket = CLIENT.newWebSocket(REQUEST, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
                                 log.info("content: {}", content);
                                 // 清空音频流缓冲区
                                 bos.reset();
-                                if(StringUtils.isNotEmpty(content)) {
+                                if (StringUtils.isNotEmpty(content)) {
                                     // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
                                     for (String wakeupWord : WAKEUP_WORDS) {
-                                        if(content.contains(wakeupWord)) {
+                                        if (content.contains(wakeupWord)) {
                                             AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
                                             // 播放的时候暂停收音一会儿
                                             try {
@@ -184,15 +187,16 @@ public class XfSpeechService {
                                             break;
                                         }
                                     }
-                                    if(wakedFlag) {
+                                    if (wakedFlag) {
                                         log.info("waked, start collect question.");
                                         // 读取后续音频数据流，准备回答
                                         ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
                                         while (true) {
                                             int readBytes = microphone.read(data, 0, data.length);
-                                            if(readBytes > 0) {
+                                            log.info("read data 2");
+                                            if (readBytes > 0) {
                                                 // 一直累积到收音结束
-                                                if(isSpeech(data)) {
+                                                if (isSpeech(data)) {
                                                     log.info("collecting question data");
                                                     questionBos.write(data, 0, readBytes);
                                                 } else {
