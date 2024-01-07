@@ -151,7 +151,6 @@ public class XfSpeechService {
             byte[] data = new byte[microphone.getBufferSize() / 5];
             while (true) {
                 int read = microphone.read(data, 0, data.length);
-                log.info("read data 1");
                 if(read > 0) {
                     // 不是语音，不处理，
                     // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理

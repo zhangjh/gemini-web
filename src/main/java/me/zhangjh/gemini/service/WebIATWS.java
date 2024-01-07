@@ -153,7 +153,7 @@ public class WebIATWS extends WebSocketListener {
                 if (resp.getData().getStatus() == 2) {
                     // resp.data.status ==2 说明数据全部返回完毕，可以关闭连接，释放资源
                     String recognized = DECODER.toString();
-                    log.info("最终识别结果: {}, 耗时: {}", recognized, sw.elapsed());
+//                    log.info("最终识别结果: {}, 耗时: {}", recognized, sw.elapsed());
                     try {
                         if(StringUtils.isNotEmpty(recognized)) {
                             this.cb.apply(recognized);
