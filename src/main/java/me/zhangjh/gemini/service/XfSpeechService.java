@@ -171,7 +171,8 @@ public class XfSpeechService {
                                     // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
                                     for (String wakeupWord : WAKEUP_WORDS) {
                                         if (content.contains(wakeupWord)) {
-                                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+//                                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                                            log.info("播放应答语");
                                             log.info("waked, start collect question.");
                                             // 读取后续音频数据流，准备回答
                                             ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
