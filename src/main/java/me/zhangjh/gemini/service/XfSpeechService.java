@@ -223,7 +223,7 @@ public class XfSpeechService {
             try {
                 Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
                 SpeechRecognitionResult speechRecognitionResult = task.get();
-
+                log.info("result: {}", speechRecognitionResult);
                 if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
                     String text = speechRecognitionResult.getText();
                     // 如果不是唤醒词则不处理，否则开始累积后续的问题语音输入
