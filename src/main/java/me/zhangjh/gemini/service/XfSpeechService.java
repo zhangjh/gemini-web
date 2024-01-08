@@ -28,7 +28,6 @@ import javax.crypto.spec.SecretKeySpec;
 import javax.sound.sampled.*;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
@@ -67,21 +66,11 @@ public class XfSpeechService {
 
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
 
-    private final OkHttpClient CLIENT;
-    private final Request REQUEST;
-    private final VAD VAD_INSTANCE;
+    private static final OkHttpClient CLIENT = new OkHttpClient.Builder().build();
+    private Request request;
+    private static final VAD VAD_INSTANCE = new VAD();
 
     private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
-
-    {
-        CLIENT = new OkHttpClient.Builder().build();
-        String authUrl = getAuthUrl();
-        String url = authUrl
-                .replace("http://", "ws://")
-                .replace("https://", "wss://");
-        REQUEST = new Request.Builder().url(url).build();
-        VAD_INSTANCE = new VAD();
-    }
 
     /**
      * maximum 10, role user & model as one, need 2 elements
@@ -150,7 +139,7 @@ public class XfSpeechService {
         return VAD_INSTANCE.isSpeech(data);
     }
 
-    private void recordTask() throws LineUnavailableException, IOException {
+    private void recordTask() throws LineUnavailableException {
         TargetDataLine microphone = startMicrophone();
         // 录音状态，[前一状态，当前状态]
         final int[] preState = {0};
@@ -176,7 +165,7 @@ public class XfSpeechService {
                         curState[0] = 0;
                         if(preState[0] == 1) {
                             // 从语音到非语音，即状态数组为[1,0]时，证明累积到了一个正常的语音流
-                            CLIENT.newWebSocket(REQUEST, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
+                            CLIENT.newWebSocket(request, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
                                 log.info("content: {}", content);
                                 // 清空音频流缓冲区
                                 bos.reset();
@@ -199,7 +188,7 @@ public class XfSpeechService {
                                                         questionBos.write(data, 0, readBytes);
                                                     } else {
                                                         log.info("question ASR");
-                                                        CLIENT.newWebSocket(REQUEST,
+                                                        CLIENT.newWebSocket(request,
                                                                 new WebIATWS(new ByteArrayInputStream(questionBos.toByteArray()), question -> {
                                                                     // 问题结束，开始干活
                                                                     log.info("start chat, question: {}", question);
@@ -310,6 +299,11 @@ public class XfSpeechService {
 
     @PostConstruct
     public void init() {
+        String authUrl = getAuthUrl();
+        String url = authUrl
+                .replace("http://", "ws://")
+                .replace("https://", "wss://");
+        request = new Request.Builder().url(url).build();
         // 启动常驻后台任务
         recordTaskUseAzure();
     }
