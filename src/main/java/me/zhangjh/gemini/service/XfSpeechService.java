@@ -39,6 +39,7 @@ import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -145,69 +146,58 @@ public class XfSpeechService {
         return VAD_INSTANCE.isSpeech(data);
     }
 
-    private void recordTask() throws LineUnavailableException {
-        TargetDataLine microphone = startMicrophone();
-        // 录音状态，[前一状态，当前状态]
-        final int[] preState = {0};
-        final int[] curState = {0};
-        EXECUTOR_SERVICE.submit(() -> {
+    private void recordTask() {
+        TargetDataLine microphone;
+        try {
+            microphone = startMicrophone();
+            int preState = 0;
+            int curState = 0;
+            AtomicBoolean isWakeupWordDetected = new AtomicBoolean(false);
             byte[] data = new byte[microphone.getBufferSize() / 5];
+            List<byte[]> questionDataList = new ArrayList<>();
+
             while (true) {
                 int read = microphone.read(data, 0, data.length);
                 if(read > 0) {
                     // 不是语音，不处理，
                     // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理
                     if(isSpeech(data)) {
-                        // 当前正在播放时检测到人声，停止播放
-//                        if(AudioPlayer.isPlaying()) {
-//                            AudioPlayer.stop();
-//                        }
-                        preState[0] = curState[0];
-                        curState[0] = 1;
-                        // 累积音频流
-                        bos.write(data, 0, read);
+                        curState = 1;
+                        if (isWakeupWordDetected.get()) {
+                            questionDataList.add(data.clone());
+                        }
                     } else {
-                        preState[0] = curState[0];
-                        curState[0] = 0;
-                        if(preState[0] == 1) {
+                        preState = curState;
+                        // 当前无语音输入
+                        curState = 0;
+                        // 当前状态表示语音输入结束，开始识别
+                        if(preState == 1) {
                             // 从语音到非语音，即状态数组为[1,0]时，证明累积到了一个正常的语音流
                             CLIENT.newWebSocket(request, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
                                 log.info("content: {}", content);
                                 // 清空音频流缓冲区
                                 bos.reset();
                                 if (StringUtils.isNotEmpty(content)) {
-                                    // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
-                                    for (String wakeupWord : WAKEUP_WORDS) {
-                                        if (content.contains(wakeupWord)) {
-//                                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
-                                            log.info("播放应答语");
-                                            log.info("waked, start collect question.");
-                                            // 读取后续音频数据流，准备回答
-                                            ByteArrayOutputStream questionBos = new ByteArrayOutputStream();
-                                            while (true) {
-                                                int readBytes = microphone.read(data, 0, data.length);
-                                                log.info("read data 2");
-                                                if (readBytes > 0) {
-                                                    // 一直累积到收音结束
-                                                    if (isSpeech(data)) {
-                                                        log.info("collecting question data");
-                                                        questionBos.write(data, 0, readBytes);
-                                                    } else {
-                                                        log.info("question ASR");
-                                                        CLIENT.newWebSocket(request,
-                                                                new WebIATWS(new ByteArrayInputStream(questionBos.toByteArray()), question -> {
-                                                                    // 问题结束，开始干活
-                                                                    log.info("start chat, question: {}", question);
-                                                                    executeGeminiTask(question);
-                                                                    questionBos.reset();
-                                                                    return null;
-                                                                }));
-                                                        break;
-                                                    }
-                                                }
+                                    if(!isWakeupWordDetected.get()) {
+                                        // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
+                                        for (String wakeupWord : WAKEUP_WORDS) {
+                                            if (content.contains(wakeupWord)) {
+                                                AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                                                log.info("播放应答语");
+                                                isWakeupWordDetected.set(true);
+                                                break;
                                             }
-                                            break;
                                         }
+                                    } else {
+                                        isWakeupWordDetected.set(false);
+                                        byte[] questionData = combineAudioData(questionDataList);
+                                        CLIENT.newWebSocket(request,
+                                                new WebIATWS(new ByteArrayInputStream(questionData), question -> {
+                                                    // 问题结束，开始干活
+                                                    log.info("start chat, question: {}", question);
+                                                    executeGeminiTask(question);
+                                                    return null;
+                                                }));
                                     }
                                 }
                                 return null;
@@ -216,7 +206,9 @@ public class XfSpeechService {
                     }
                 }
             }
-        });
+        } catch (LineUnavailableException e) {
+            e.printStackTrace();
+        }
     }
 
     private void recordTaskUseAzure() {
@@ -377,8 +369,9 @@ public class XfSpeechService {
                 .replace("https://", "wss://");
         request = new Request.Builder().url(url).build();
         // 启动常驻后台任务
+        recordTask();
 //        recordTaskUseAzure();
-        recordTaskUseHs();
+//        recordTaskUseHs();
     }
 
     @PreDestroy
