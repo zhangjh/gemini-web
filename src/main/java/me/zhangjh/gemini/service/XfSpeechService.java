@@ -8,6 +8,7 @@ import com.microsoft.cognitiveservices.speech.SpeechRecognizer;
 import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.common.RoleEnum;
 import me.zhangjh.gemini.pojo.ChatContent;
@@ -20,6 +21,7 @@ import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -66,6 +68,7 @@ public class XfSpeechService {
 
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
 
+    private static TargetDataLine microphone = null;
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder().build();
     private Request request;
     private static final VAD VAD_INSTANCE = new VAD();
@@ -120,6 +123,9 @@ public class XfSpeechService {
         return httpUrl.toString();
     }
 
+    @Autowired
+    private HsSpeechService hsSpeechService;
+
     /**
      * 开启麦克风准备拾音，设备异常抛错
      * */
@@ -129,7 +135,7 @@ public class XfSpeechService {
         if (!AudioSystem.isLineSupported(info)) {
             throw new RuntimeException("Line not support, may be there is no microphone exist.");
         }
-        TargetDataLine microphone = (TargetDataLine) AudioSystem.getLine(info);
+        microphone = (TargetDataLine) AudioSystem.getLine(info);
         microphone.open(format, microphone.getBufferSize());
         microphone.start();
         return microphone;
@@ -223,7 +229,6 @@ public class XfSpeechService {
             try {
                 Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
                 SpeechRecognitionResult speechRecognitionResult = task.get();
-                log.info("result: {}", speechRecognitionResult);
                 if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
                     String text = speechRecognitionResult.getText();
                     // 如果不是唤醒词则不处理，否则开始累积后续的问题语音输入
@@ -249,6 +254,73 @@ public class XfSpeechService {
                 log.error("recordTaskUseAzure exception: ", e);
             }
         }
+    }
+
+    private void recordTaskUseHs() {
+        // 开始收音
+        try {
+            TargetDataLine microphone = startMicrophone();
+            int preState = 0;
+            int curState = 0;
+            boolean isWakeupWordDetected = false;
+            byte[] data = new byte[microphone.getBufferSize() / 5];
+            List<byte[]> questionDataList = new ArrayList<>();
+
+            while (true) {
+                int read = microphone.read(data, 0, data.length);
+                if(read > 0) {
+                    if(isSpeech(data)) {
+                        // 正在说话
+                        curState = 1;
+                        if (isWakeupWordDetected) {
+                            questionDataList.add(data.clone());
+                        }
+                    } else {
+                        preState = curState;
+                        // 当前无语音输入
+                        curState = 0;
+                        // 当前状态表示语音输入结束，开始识别
+                        if(preState == 1) {
+                            String asr = hsSpeechService.asr(data);
+                            log.info("asr: {}", asr);
+                            if(!isWakeupWordDetected) {
+                                for (String wakeupWord : WAKEUP_WORDS) {
+                                    if (asr.contains(wakeupWord)) {
+                                        AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                                        log.info("播放应答语");
+                                        isWakeupWordDetected = true;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                byte[] questionData = combineAudioData(questionDataList);
+                                String question = hsSpeechService.asr(questionData);
+                                executeGeminiTask(question);
+                                isWakeupWordDetected = false;
+                                questionDataList.clear();
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private byte[] combineAudioData(List<byte[]> audioDataList) {
+        int totalSize = 0;
+        for (byte[] data : audioDataList) {
+            totalSize += data.length;
+        }
+        byte[] combinedData = new byte[totalSize];
+        int offset = 0;
+
+        for (byte[] data : audioDataList) {
+            System.arraycopy(data, 0, combinedData, offset, data.length);
+            offset += data.length;
+        }
+        return combinedData;
     }
 
     private void executeGeminiTask(String question) {
@@ -305,6 +377,14 @@ public class XfSpeechService {
                 .replace("https://", "wss://");
         request = new Request.Builder().url(url).build();
         // 启动常驻后台任务
-        recordTaskUseAzure();
+//        recordTaskUseAzure();
+        recordTaskUseHs();
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if(microphone!= null) {
+            microphone.close();
+        }
     }
 }
