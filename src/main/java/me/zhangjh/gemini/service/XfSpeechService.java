@@ -1,6 +1,11 @@
 package me.zhangjh.gemini.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import com.microsoft.cognitiveservices.speech.ResultReason;
+import com.microsoft.cognitiveservices.speech.SpeechConfig;
+import com.microsoft.cognitiveservices.speech.SpeechRecognitionResult;
+import com.microsoft.cognitiveservices.speech.SpeechRecognizer;
+import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -14,8 +19,8 @@ import me.zhangjh.gemini.util.HttpClientUtil;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.WebSocket;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Mac;
@@ -32,6 +37,7 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -44,8 +50,16 @@ import java.util.concurrent.atomic.AtomicReference;
 public class XfSpeechService {
 
     private static final String HOST_URL = "https://iat-api.xfyun.cn/v2/iat";
-    private static final String API_SECRET = "3760b5e9bd1b5cf4bd1379551b925cc4";
-    private static final String APP_KEY = "311d42a308bcca3807b4a4e457bd1ece";
+
+    @Value("${XY_API_SECRET}")
+    private String apiSecret;
+    @Value("${XY_APP_KEY}")
+    private String appKey;
+
+    @Value("${SPEECH_KEY}")
+    private String speechKey;
+    @Value("${SPEECH_REGION}")
+    private String speechRegion;
 
     private static final String GEMINI_WEB_URL = "http://wx.zhangjh.me:8080/gemini/generateStream";
 
@@ -53,14 +67,13 @@ public class XfSpeechService {
 
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
 
-    private static final OkHttpClient CLIENT;
-    private static final Request REQUEST;
-    private static final VAD VAD_INSTANCE;
-    private static WebSocket socket;
+    private final OkHttpClient CLIENT;
+    private final Request REQUEST;
+    private final VAD VAD_INSTANCE;
 
     private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
 
-    static {
+    {
         CLIENT = new OkHttpClient.Builder().build();
         String authUrl = getAuthUrl();
         String url = authUrl
@@ -84,7 +97,7 @@ public class XfSpeechService {
      * */
     private ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
-    private static String getAuthUrl() {
+    private String getAuthUrl() {
         URL url = null;
         try {
             url = new URL(HOST_URL);
@@ -101,7 +114,7 @@ public class XfSpeechService {
         Mac mac = null;
         try {
             mac = Mac.getInstance("hmacsha256");
-            SecretKeySpec spec = new SecretKeySpec(API_SECRET.getBytes(charset), "hmacsha256");
+            SecretKeySpec spec = new SecretKeySpec(apiSecret.getBytes(charset), "hmacsha256");
             mac.init(spec);
         } catch (Exception ignored) {
         }
@@ -109,7 +122,7 @@ public class XfSpeechService {
         byte[] hexDigits = mac.doFinal(builder.getBytes(charset));
         String sha = Base64.getEncoder().encodeToString(hexDigits);
 
-        String authorization = String.format("api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"", APP_KEY, "hmac-sha256", "host date request-line", sha);
+        String authorization = String.format("api_key=\"%s\", algorithm=\"%s\", headers=\"%s\", signature=\"%s\"", appKey, "hmac-sha256", "host date request-line", sha);
         HttpUrl httpUrl = Objects.requireNonNull(HttpUrl.parse("https://" + url.getHost() + url.getPath())).newBuilder().
                 addQueryParameter("authorization", Base64.getEncoder().encodeToString(authorization.getBytes(charset))).
                 addQueryParameter("date", date).
@@ -163,7 +176,7 @@ public class XfSpeechService {
                         curState[0] = 0;
                         if(preState[0] == 1) {
                             // 从语音到非语音，即状态数组为[1,0]时，证明累积到了一个正常的语音流
-                            socket = CLIENT.newWebSocket(REQUEST, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
+                            CLIENT.newWebSocket(REQUEST, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
                                 log.info("content: {}", content);
                                 // 清空音频流缓冲区
                                 bos.reset();
@@ -211,6 +224,44 @@ public class XfSpeechService {
         });
     }
 
+    private void recordTaskUseAzure() {
+        SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
+        speechConfig.setSpeechRecognitionLanguage("zh-CN");
+        AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
+        SpeechRecognizer speechRecognizer = new SpeechRecognizer(speechConfig, audioConfig);
+        while (true) {
+            // 开始收音
+            try {
+                Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
+                SpeechRecognitionResult speechRecognitionResult = task.get();
+
+                if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
+                    String text = speechRecognitionResult.getText();
+                    // 如果不是唤醒词则不处理，否则开始累积后续的问题语音输入
+                    for (String wakeupWord : WAKEUP_WORDS) {
+                        if(wakeupWord.contains(text)) {
+                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                            log.info("播放应答语");
+                            // 紧接着的语音输入认为是问题
+                            task = speechRecognizer.recognizeOnceAsync();
+                            SpeechRecognitionResult result = task.get();
+                            if(result.getReason() == ResultReason.RecognizedSpeech) {
+                                String question = result.getText();
+                                // 干活，然后结束，继续等待下一次唤醒，暂时不支持一次唤醒后连续对话
+                                log.info("start chat, question: {}", question);
+                                executeGeminiTask(question);
+                            }
+                        }
+                    }
+                } else if (speechRecognitionResult.getReason() == ResultReason.NoMatch) {
+                    log.info("NOMATCH: Speech could not be recognized.");
+                }
+            } catch (Exception e) {
+                log.error("recordTaskUseAzure exception: ", e);
+            }
+        }
+    }
+
     private void executeGeminiTask(String question) {
         log.info("question: {}", question);
         // 调用远端http服务
@@ -221,44 +272,45 @@ public class XfSpeechService {
         httpRequest.setReqData(JSONObject.toJSONString(geminiRequest));
         StringBuilder answerBuffer = new StringBuilder();
         AtomicReference<StringBuilder> ttsBuffer = new AtomicReference<>(new StringBuilder());
-        HttpClientUtil.sendStream(httpRequest, response -> {
-            log.info("response: {}", response);
-            if(StringUtils.isNotEmpty(response)) {
-                answerBuffer.append(response);
-                // 结束标记
-                if(Objects.equals(response, "[done]")) {
-                    String answer = answerBuffer.toString();
-                    // maximum 10, remove oldest two
-                    if(context.size() == MAX_CHAT_CONTEXT) {
-                        context.remove(1);
-                        context.remove(0);
-                    }
-                    context.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
-                    context.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
-                } else {
-                    // 流式答案
-                    ttsBuffer.get().append(response);
-                    if(TRUNCATION_SYMBOLS.contains(response)) {
-                        // 将当前ttsBuffer的内容拿去做tts转换，播放，清空ttsBuffer
-                        if(!ttsBuffer.get().isEmpty()) {
-                            String mp3 = new Text2Speech().toTtsMp3(ttsBuffer.toString());
-                            AudioPlayer.playMp3(mp3);
-                            ttsBuffer.set(new StringBuilder());
+        try {
+            HttpClientUtil.sendStream(httpRequest, response -> {
+                log.info("response: {}", response);
+                if(StringUtils.isNotEmpty(response)) {
+                    answerBuffer.append(response);
+                    // 结束标记
+                    if(Objects.equals(response, "[done]")) {
+                        String answer = answerBuffer.toString();
+                        // maximum 10, remove oldest two
+                        if(context.size() == MAX_CHAT_CONTEXT) {
+                            context.remove(1);
+                            context.remove(0);
+                        }
+                        context.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
+                        context.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
+                    } else {
+                        // 流式答案
+                        ttsBuffer.get().append(response);
+                        if(TRUNCATION_SYMBOLS.contains(response)) {
+                            // 将当前ttsBuffer的内容拿去做tts转换，播放，清空ttsBuffer
+                            if(!ttsBuffer.get().isEmpty()) {
+                                String mp3 = new Text2Speech().toTtsMp3(ttsBuffer.toString());
+                                AudioPlayer.playMp3(mp3);
+                                ttsBuffer.set(new StringBuilder());
+                            }
                         }
                     }
                 }
-            }
-            return null;
-        });
+                return null;
+            });
+        } catch (Exception e) {
+            // 播放异常
+            AudioPlayer.playMp3("src/main/resources/mp3/网络连接超时.mp3");
+        }
     }
 
     @PostConstruct
     public void init() {
         // 启动常驻后台任务
-        try {
-            recordTask();
-        } catch (LineUnavailableException | IOException e) {
-            e.printStackTrace();
-        }
+        recordTaskUseAzure();
     }
 }

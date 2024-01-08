@@ -31,6 +31,6 @@ public class AudioPlayer {
     }
 
     public static void main(String[] args) {
-        playMp3("src/main/resources/mp3/tmp/1703819913582.mp3");
+        playMp3("src/main/resources/mp3/应答语.mp3");
     }
 }
