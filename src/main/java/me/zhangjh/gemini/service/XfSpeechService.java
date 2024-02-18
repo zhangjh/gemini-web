@@ -1,11 +1,6 @@
 package me.zhangjh.gemini.service;
 
 import com.alibaba.fastjson2.JSONObject;
-import com.microsoft.cognitiveservices.speech.ResultReason;
-import com.microsoft.cognitiveservices.speech.SpeechConfig;
-import com.microsoft.cognitiveservices.speech.SpeechRecognitionResult;
-import com.microsoft.cognitiveservices.speech.SpeechRecognizer;
-import com.microsoft.cognitiveservices.speech.audio.AudioConfig;
 import com.orctom.vad4j.VAD;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -21,7 +16,6 @@ import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -36,9 +30,6 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -58,16 +49,9 @@ public class XfSpeechService {
     @Value("${XY_APP_KEY}")
     private String appKey;
 
-    @Value("${SPEECH_KEY}")
-    private String speechKey;
-    @Value("${SPEECH_REGION}")
-    private String speechRegion;
-
     private static final String GEMINI_WEB_URL = "http://wx.zhangjh.me:8080/gemini/generateStream";
 
     private static final List<String> WAKEUP_WORDS = Arrays.asList("小张小张", "小张同学", "你好小张");
-
-    private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
 
     private static TargetDataLine microphone = null;
     private static final OkHttpClient CLIENT = new OkHttpClient.Builder().build();
@@ -88,7 +72,7 @@ public class XfSpeechService {
     /**
      * 录音数据流缓冲区
      * */
-    private ByteArrayOutputStream bos = new ByteArrayOutputStream();
+    private final ByteArrayOutputStream bos = new ByteArrayOutputStream();
 
     private String getAuthUrl() {
         URL url = null;
@@ -124,9 +108,6 @@ public class XfSpeechService {
         return httpUrl.toString();
     }
 
-    @Autowired
-    private HsSpeechService hsSpeechService;
-
     /**
      * 开启麦克风准备拾音，设备异常抛错
      * */
@@ -150,8 +131,6 @@ public class XfSpeechService {
         TargetDataLine microphone;
         try {
             microphone = startMicrophone();
-            int preState = 0;
-            int curState = 0;
             AtomicBoolean isWakeupWordDetected = new AtomicBoolean(false);
             byte[] data = new byte[microphone.getBufferSize() / 5];
             List<byte[]> questionDataList = new ArrayList<>();
@@ -159,139 +138,45 @@ public class XfSpeechService {
             while (true) {
                 int read = microphone.read(data, 0, data.length);
                 if(read > 0) {
-                    // 不是语音，不处理，
-                    // 从不是语音到是语音再到不是语音状态时证明累积到了一个正常的语音流，即状态为[1,0]开始处理
+                    // 不是语音，不处理
                     if(isSpeech(data)) {
-                        curState = 1;
+                        // 检测到唤醒词则记录到问题语音数据列表中，否则记录到缓冲区
                         if (isWakeupWordDetected.get()) {
-                            questionDataList.add(data.clone());
+                            questionDataList.add(data);
+                        } else {
+                            bos.write(data);
                         }
                     } else {
-                        preState = curState;
-                        // 当前无语音输入
-                        curState = 0;
-                        // 当前状态表示语音输入结束，开始识别
-                        if(preState == 1) {
-                            // 从语音到非语音，即状态数组为[1,0]时，证明累积到了一个正常的语音流
-                            CLIENT.newWebSocket(request, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
-                                log.info("content: {}", content);
-                                // 清空音频流缓冲区
-                                bos.reset();
-                                if (StringUtils.isNotEmpty(content)) {
-                                    if(!isWakeupWordDetected.get()) {
-                                        // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
-                                        for (String wakeupWord : WAKEUP_WORDS) {
-                                            if (content.contains(wakeupWord)) {
-                                                AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
-                                                log.info("播放应答语");
-                                                isWakeupWordDetected.set(true);
-                                                break;
-                                            }
+                        CLIENT.newWebSocket(request, new WebIATWS(new ByteArrayInputStream(bos.toByteArray()), content -> {
+                            log.info("content: {}", content);
+                            // 清空音频流缓冲区
+                            bos.reset();
+                            if (StringUtils.isNotEmpty(content)) {
+                                if(!isWakeupWordDetected.get()) {
+                                    // 如果检测到了唤醒词则开始累积问题语音数据，否则忽略不处理
+                                    for (String wakeupWord : WAKEUP_WORDS) {
+                                        if (content.contains(wakeupWord)) {
+                                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
+                                            log.info("播放应答语");
+                                            isWakeupWordDetected.set(true);
+                                            break;
                                         }
-                                    } else {
-                                        isWakeupWordDetected.set(false);
-                                        byte[] questionData = combineAudioData(questionDataList);
-                                        CLIENT.newWebSocket(request,
-                                                new WebIATWS(new ByteArrayInputStream(questionData), question -> {
-                                                    // 问题结束，开始干活
-                                                    log.info("start chat, question: {}", question);
-                                                    executeGeminiTask(question);
-                                                    return null;
-                                                }));
                                     }
+                                } else {
+                                    isWakeupWordDetected.set(false);
+                                    byte[] questionData = combineAudioData(questionDataList);
+                                    CLIENT.newWebSocket(request,
+                                            new WebIATWS(new ByteArrayInputStream(questionData), question -> {
+                                                // 问题结束，开始干活
+                                                log.info("start chat, question: {}", question);
+                                                executeGeminiTask(question);
+                                                questionDataList.clear();
+                                                return null;
+                                            }));
                                 }
-                                return null;
-                            }));
-                        }
-                    }
-                }
-            }
-        } catch (LineUnavailableException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void recordTaskUseAzure() {
-        SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
-        speechConfig.setSpeechRecognitionLanguage("zh-CN");
-        AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
-        SpeechRecognizer speechRecognizer = new SpeechRecognizer(speechConfig, audioConfig);
-        while (true) {
-            // 开始收音
-            try {
-                Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
-                SpeechRecognitionResult speechRecognitionResult = task.get();
-                if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
-                    String text = speechRecognitionResult.getText();
-                    // 如果不是唤醒词则不处理，否则开始累积后续的问题语音输入
-                    for (String wakeupWord : WAKEUP_WORDS) {
-                        if(wakeupWord.contains(text)) {
-                            AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
-                            log.info("播放应答语");
-                            // 紧接着的语音输入认为是问题
-                            task = speechRecognizer.recognizeOnceAsync();
-                            SpeechRecognitionResult result = task.get();
-                            if(result.getReason() == ResultReason.RecognizedSpeech) {
-                                String question = result.getText();
-                                // 干活，然后结束，继续等待下一次唤醒，暂时不支持一次唤醒后连续对话
-                                log.info("start chat, question: {}", question);
-                                executeGeminiTask(question);
                             }
-                        }
-                    }
-                } else if (speechRecognitionResult.getReason() == ResultReason.NoMatch) {
-                    log.info("NOMATCH: Speech could not be recognized.");
-                }
-            } catch (Exception e) {
-                log.error("recordTaskUseAzure exception: ", e);
-            }
-        }
-    }
-
-    private void recordTaskUseHs() {
-        // 开始收音
-        try {
-            TargetDataLine microphone = startMicrophone();
-            int preState = 0;
-            int curState = 0;
-            boolean isWakeupWordDetected = false;
-            byte[] data = new byte[microphone.getBufferSize() / 5];
-            List<byte[]> questionDataList = new ArrayList<>();
-
-            while (true) {
-                int read = microphone.read(data, 0, data.length);
-                if(read > 0) {
-                    if(isSpeech(data)) {
-                        // 正在说话
-                        curState = 1;
-                        if (isWakeupWordDetected) {
-                            questionDataList.add(data.clone());
-                        }
-                    } else {
-                        preState = curState;
-                        // 当前无语音输入
-                        curState = 0;
-                        // 当前状态表示语音输入结束，开始识别
-                        if(preState == 1) {
-                            String asr = hsSpeechService.asr(data);
-                            log.info("asr: {}", asr);
-                            if(!isWakeupWordDetected) {
-                                for (String wakeupWord : WAKEUP_WORDS) {
-                                    if (asr.contains(wakeupWord)) {
-                                        AudioPlayer.playMp3("src/main/resources/mp3/应答语.mp3");
-                                        log.info("播放应答语");
-                                        isWakeupWordDetected = true;
-                                        break;
-                                    }
-                                }
-                            } else {
-                                byte[] questionData = combineAudioData(questionDataList);
-                                String question = hsSpeechService.asr(questionData);
-                                executeGeminiTask(question);
-                                isWakeupWordDetected = false;
-                                questionDataList.clear();
-                            }
-                        }
+                            return null;
+                        }));
                     }
                 }
             }
@@ -370,8 +255,6 @@ public class XfSpeechService {
         request = new Request.Builder().url(url).build();
         // 启动常驻后台任务
         recordTask();
-//        recordTaskUseAzure();
-//        recordTaskUseHs();
     }
 
     @PreDestroy
