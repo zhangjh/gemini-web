@@ -38,7 +38,7 @@ public class AzureService {
     /**
      * chat context
      * */
-    private static final List<ChatContent> context = new ArrayList<>(MAX_CHAT_CONTEXT);
+    private static final List<ChatContent> CONTEXT = new ArrayList<>(MAX_CHAT_CONTEXT);
 
     @Value("${SPEECH_KEY}")
     private String speechKey;
@@ -54,6 +54,7 @@ public class AzureService {
 
     @PostConstruct
     public void init() throws Exception {
+        // todo: 多语音唤醒
         ClassPathResource resource = new ClassPathResource(wakeupModelFile);
         KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromFile(resource.getFile().getAbsolutePath());
         while (true) {
@@ -87,7 +88,7 @@ public class AzureService {
         log.info("question: {}", question);
         AtomicReference<StringBuilder> ttsBuffer = new AtomicReference<>(new StringBuilder());
         StringBuilder answerBuffer = new StringBuilder();
-        geminiService.streamChat(question, context, response -> {
+        geminiService.streamChat(question, CONTEXT, response -> {
             log.info("response: {}", response);
             if(StringUtils.isNotEmpty(response)) {
                 // 结束标记
@@ -98,12 +99,12 @@ public class AzureService {
                     }
                     String answer = answerBuffer.toString();
                     // maximum 10, remove oldest two
-                    if(context.size() == MAX_CHAT_CONTEXT) {
-                        context.remove(1);
-                        context.remove(0);
+                    if(CONTEXT.size() == MAX_CHAT_CONTEXT) {
+                        CONTEXT.remove(1);
+                        CONTEXT.remove(0);
                     }
-                    context.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
-                    context.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
+                    CONTEXT.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
+                    CONTEXT.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
                 } else {
                     answerBuffer.append(response);
                     // 流式答案
@@ -122,6 +123,8 @@ public class AzureService {
     }
 
     private void playContent(String text) {
+        // 去除换行符
+        text = text.replaceAll("\n", "");
         SpeechConfig config = SpeechConfig.fromSubscription(speechKey, speechRegion);
         config.setSpeechSynthesisVoiceName("zh-CN-YunxiaNeural");
         SpeechSynthesizer synthesizer = new SpeechSynthesizer(config);
@@ -138,11 +141,5 @@ public class AzureService {
         } catch (Exception e) {
             log.error("playContent exception: ", e);
         }
-    }
-
-    public static void main(String[] args) throws Exception {
-        ClassPathResource resource = new ClassPathResource("d9b966f7-81fc-4d95-a1f5-a3d595bd066e.table");
-        String absolutePath = resource.getFile().getAbsolutePath();
-        System.out.println(absolutePath);
     }
 }
