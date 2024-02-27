@@ -8,6 +8,7 @@ import me.zhangjh.gemini.client.GeminiService;
 import me.zhangjh.gemini.common.RoleEnum;
 import me.zhangjh.gemini.pojo.ChatContent;
 import me.zhangjh.gemini.tools.AudioPlayer;
+import me.zhangjh.gemini.tools.CommonUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +41,8 @@ public class AzureService {
      * */
     private static final List<ChatContent> CONTEXT = new ArrayList<>(MAX_CHAT_CONTEXT);
 
+    private static SpeechSynthesizer synthesizer;
+
     @Value("${SPEECH_KEY}")
     private String speechKey;
 
@@ -54,6 +57,7 @@ public class AzureService {
 
     @PostConstruct
     public void init() throws Exception {
+        initSpeech();
         // todo: 多语音唤醒
         ClassPathResource resource = new ClassPathResource(wakeupModelFile);
         KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromFile(resource.getFile().getAbsolutePath());
@@ -63,25 +67,40 @@ public class AzureService {
             Future<KeywordRecognitionResult> resultFuture = keywordRecognizer.recognizeOnceAsync(recognitionModel);
             KeywordRecognitionResult result = resultFuture.get();
             // 识别到唤醒词
-            // todo: 唤醒后一定时间内支持连续问答
             if (result.getReason() == ResultReason.RecognizedKeyword) {
                 log.info("Keyword recognized: {}", result.getText());
                 AudioPlayer.playMp3("src/main/resources/audio/应答.mp3");
                 log.info("播放应答语");
-
-                SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
-                speechConfig.setSpeechRecognitionLanguage("zh-CN");
-                SpeechRecognizer speechRecognizer =
-                        new SpeechRecognizer(speechConfig, audioConfig);
-                Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
-                SpeechRecognitionResult speechRecognitionResult = task.get();
-                if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
-                    String question = speechRecognitionResult.getText();
-                    log.info("RECOGNIZED: Text=" + speechRecognitionResult.getText());
-                    executeGeminiTask(question);
+                long startTime = System.currentTimeMillis();
+                while (true) {
+                    // 15s内没有识别到语音需要重新唤醒
+                    if (System.currentTimeMillis() - startTime > 15000) {
+                        break;
+                    }
+                    SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
+                    speechConfig.setSpeechRecognitionLanguage("zh-CN");
+                    SpeechRecognizer speechRecognizer =
+                            new SpeechRecognizer(speechConfig, audioConfig);
+                    Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
+                    SpeechRecognitionResult speechRecognitionResult = task.get();
+                    if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
+                        // 识别到语音后续期
+                        String question = speechRecognitionResult.getText();
+                        log.info("RECOGNIZED: Text=" + question);
+                        executeGeminiTask(question);
+                        startTime = System.currentTimeMillis();
+                    }
                 }
             }
         }
+    }
+
+    private void initSpeech() {
+        SpeechConfig config = SpeechConfig.fromSubscription(speechKey, speechRegion);
+        config.setSpeechSynthesisVoiceName("zh-CN-YunxiaNeural");
+        synthesizer = new SpeechSynthesizer(config);
+        Connection connection = Connection.fromSpeechSynthesizer(synthesizer);
+        connection.openConnection(true);
     }
 
     private void executeGeminiTask(String question) {
@@ -89,7 +108,6 @@ public class AzureService {
         AtomicReference<StringBuilder> ttsBuffer = new AtomicReference<>(new StringBuilder());
         StringBuilder answerBuffer = new StringBuilder();
         geminiService.streamChat(question, CONTEXT, response -> {
-            log.info("response: {}", response);
             if(StringUtils.isNotEmpty(response)) {
                 // 结束标记
                 if(Objects.equals(response, "[done]")) {
@@ -123,14 +141,15 @@ public class AzureService {
     }
 
     private void playContent(String text) {
+        log.info("playContent: {}", text);
         // 去除换行符
-        text = text.replaceAll("\n", "");
-        SpeechConfig config = SpeechConfig.fromSubscription(speechKey, speechRegion);
-        config.setSpeechSynthesisVoiceName("zh-CN-YunxiaNeural");
-        SpeechSynthesizer synthesizer = new SpeechSynthesizer(config);
-        try (synthesizer; SpeechSynthesisResult result = synthesizer.SpeakTextAsync(text).get()) {
+        text = CommonUtil.markdown2Text(text);
+        if(StringUtils.isEmpty(text)) {
+            return;
+        }
+        try (SpeechSynthesisResult result = synthesizer.SpeakTextAsync(text).get()) {
             if (result.getReason() == ResultReason.SynthesizingAudioCompleted) {
-                log.info("Speech synthesized for text [" + text + "]");
+                log.info("Speech synthesized for text: {}", text);
             } else if (result.getReason() == ResultReason.Canceled) {
                 SpeechSynthesisCancellationDetails cancellation = SpeechSynthesisCancellationDetails.fromResult(result);
                 log.info("CANCELED: SpeechSynthesis was canceled: Reason=" + cancellation.getReason());
