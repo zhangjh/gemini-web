@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Component
 public class AzureService {
 
-    private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("，", "。", "！", "？", "、", "...", ";", ":");
+    private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("。", "！", "？", "...");
     /**
      * maximum 10, role user & model as one, need 2 elements
      * */
@@ -42,6 +42,8 @@ public class AzureService {
     private static final List<ChatContent> CONTEXT = new ArrayList<>(MAX_CHAT_CONTEXT);
 
     private static SpeechSynthesizer synthesizer;
+
+    private static boolean firstStreamPlayed = false;
 
     @Value("${SPEECH_KEY}")
     private String speechKey;
@@ -114,6 +116,8 @@ public class AzureService {
                     // 还有未播报的开始播报
                     if(!ttsBuffer.get().isEmpty()) {
                         playContent(ttsBuffer.toString());
+                        // 重置标记
+                        firstStreamPlayed = false;
                     }
                     String answer = answerBuffer.toString();
                     // maximum 10, remove oldest two
@@ -127,11 +131,17 @@ public class AzureService {
                     answerBuffer.append(response);
                     // 流式答案
                     ttsBuffer.get().append(response);
-                    if(TRUNCATION_SYMBOLS.contains(response)) {
-                        // 将当前ttsBuffer的内容拿去做tts转换，播放，清空ttsBuffer
-                        if(!ttsBuffer.get().isEmpty()) {
-                            playContent(ttsBuffer.toString());
-                            ttsBuffer.set(new StringBuilder());
+                    // 第一句流式播放
+                    if(!firstStreamPlayed) {
+                        for (String symbol : TRUNCATION_SYMBOLS) {
+                            String tmp = ttsBuffer.get().toString();
+                            int index = tmp.indexOf(symbol);
+                            if(index != -1) {
+                                playContent(tmp.substring(0, index));
+                                ttsBuffer.set(new StringBuilder(tmp.substring(index)));
+                                firstStreamPlayed = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -142,7 +152,6 @@ public class AzureService {
 
     private void playContent(String text) {
         log.info("playContent: {}", text);
-        // 去除换行符
         text = CommonUtil.markdown2Text(text);
         if(StringUtils.isEmpty(text)) {
             return;
