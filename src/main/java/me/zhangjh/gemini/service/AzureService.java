@@ -97,6 +97,8 @@ public class AzureService {
                         executeGeminiTask(question);
                         // 识别到语音后续期
                         startTime = System.currentTimeMillis();
+                    } else {
+                        log.info("NOMATCH: Speech could not be recognized.");
                     }
                 }
             }
