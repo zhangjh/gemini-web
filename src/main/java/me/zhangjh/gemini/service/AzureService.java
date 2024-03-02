@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import me.zhangjh.gemini.client.GeminiService;
 import me.zhangjh.gemini.common.RoleEnum;
 import me.zhangjh.gemini.pojo.ChatContent;
-import me.zhangjh.gemini.tools.AudioPlayer;
 import me.zhangjh.gemini.tools.CommonUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,7 +76,7 @@ public class AzureService {
             // 识别到唤醒词
             if (result.getReason() == ResultReason.RecognizedKeyword) {
                 log.info("Keyword recognized: {}", result.getText());
-                AudioPlayer.playMp3("src/main/resources/audio/应答.mp3");
+                playContent("主人我在，有什么吩咐？");
                 log.info("播放应答语");
                 long startTime = System.currentTimeMillis();
                 while (true) {

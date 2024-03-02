@@ -29,8 +29,4 @@ public class AudioPlayer {
     public boolean isPlaying() {
         return isPlaying;
     }
-
-    public static void main(String[] args) {
-        playMp3("src/main/resources/audio/应答语.mp3");
-    }
 }
