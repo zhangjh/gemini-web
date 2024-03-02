@@ -32,6 +32,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public class AzureService {
 
     private static final List<String> TRUNCATION_SYMBOLS = Arrays.asList("。", "！", "？", "...");
+
+    private static final List<String> EXIT_WORDS = Arrays.asList("退出", "关闭", "停止", "结束");
     /**
      * maximum 10, role user & model as one, need 2 elements
      * */
@@ -86,10 +88,14 @@ public class AzureService {
                     Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
                     SpeechRecognitionResult speechRecognitionResult = task.get();
                     if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
-                        // 识别到语音后续期
                         String question = speechRecognitionResult.getText();
+                        // 识别到的是退出词，结束多轮对话回到待唤醒状态
+                        if(EXIT_WORDS.contains(question)) {
+                            break;
+                        }
                         log.info("RECOGNIZED: Text=" + question);
                         executeGeminiTask(question);
+                        // 识别到语音后续期
                         startTime = System.currentTimeMillis();
                     }
                 }
