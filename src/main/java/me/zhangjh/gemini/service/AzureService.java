@@ -64,8 +64,8 @@ public class AzureService {
         initSpeech();
         // todo: 多语音唤醒
         ClassPathResource resource = new ClassPathResource(wakeupModelFile);
-        String fileName = resource.getFile().getName().substring(0, resource.getFile().getName().lastIndexOf("."));
-        log.info("wakeUpFilePath: {}, fileName: {}", resource.getFile().getAbsolutePath(), fileName);
+        String fileName = wakeupModelFile.substring(0, wakeupModelFile.lastIndexOf("."));
+        log.info("wakeUpFilePath: {}, fileName: {}", wakeupModelFile, fileName);
 
         KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromStream(resource.getInputStream(),
                 fileName, false);
