@@ -13,8 +13,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.util.ClassUtils;
+import org.springframework.util.ResourceUtils;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -63,10 +64,9 @@ public class AzureService {
     public void init() throws Exception {
         initSpeech();
         // todo: 多语音唤醒
-        String wakeUpFilePath = Objects.requireNonNull(Objects.requireNonNull(ClassUtils.getDefaultClassLoader())
-                .getResource(wakeupModelFile)).getPath();
-        log.info("wakeUpFilePath: {}", wakeUpFilePath);
-        KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromFile(wakeUpFilePath);
+        File file = ResourceUtils.getFile("classpath:" + wakeupModelFile);
+        log.info("wakeUpFilePath: {}", file.getAbsolutePath());
+        KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromFile(file.getAbsolutePath());
         while (true) {
             AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
             KeywordRecognizer keywordRecognizer = new KeywordRecognizer(audioConfig);
