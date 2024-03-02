@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.ResourceUtils;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -65,8 +66,11 @@ public class AzureService {
         initSpeech();
         // todo: 多语音唤醒
         File file = ResourceUtils.getFile("classpath:" + wakeupModelFile);
-        log.info("wakeUpFilePath: {}", file.getAbsolutePath());
-        KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromFile(file.getAbsolutePath());
+        log.info("wakeUpFilePath: {}, fileName: {}", file.getAbsolutePath(), file.getName());
+        FileInputStream inputStream = new FileInputStream(file);
+        KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromStream(inputStream,
+                file.getName().substring(0, file.getName().lastIndexOf(".")),
+                false);
         while (true) {
             AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
             KeywordRecognizer keywordRecognizer = new KeywordRecognizer(audioConfig);
