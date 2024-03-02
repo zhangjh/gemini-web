@@ -158,6 +158,7 @@ public class AzureService {
 
     private void playContent(String text) {
         log.info("playContent: {}", text);
+        text = CommonUtil.clean(text);
         text = CommonUtil.markdown2Text(text);
         if(StringUtils.isEmpty(text)) {
             return;
