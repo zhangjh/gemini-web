@@ -65,6 +65,7 @@ public class AzureService {
         // todo: 多语音唤醒
         String wakeUpFilePath = Objects.requireNonNull(Objects.requireNonNull(ClassUtils.getDefaultClassLoader())
                 .getResource(wakeupModelFile)).getPath();
+        log.info("wakeUpFilePath: {}", wakeUpFilePath);
         KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromFile(wakeUpFilePath);
         while (true) {
             AudioConfig audioConfig = AudioConfig.fromDefaultMicrophoneInput();
