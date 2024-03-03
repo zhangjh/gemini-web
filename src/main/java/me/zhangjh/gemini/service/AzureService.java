@@ -82,6 +82,7 @@ public class AzureService {
                 while (true) {
                     // 15s内没有识别到语音需要重新唤醒
                     if (System.currentTimeMillis() - startTime > 15000) {
+                        log.info("超时退出监听");
                         break;
                     }
                     SpeechConfig speechConfig = SpeechConfig.fromSubscription(speechKey, speechRegion);
@@ -93,7 +94,10 @@ public class AzureService {
                     if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
                         String question = speechRecognitionResult.getText();
                         // 识别到的是退出词，结束多轮对话回到待唤醒状态
-                        if(EXIT_WORDS.contains(question)) {
+                        boolean match = EXIT_WORDS.stream().anyMatch(question::contains);
+                        if(match) {
+                            speechRecognizer.stopContinuousRecognitionAsync();
+                            log.info("退出命令退出监听");
                             break;
                         }
                         log.info("RECOGNIZED: Text=" + question);

@@ -100,8 +100,7 @@ public class CommonUtil {
         if(StringUtils.isEmpty(text)) {
             return "";
         }
-        // 将反斜杠替换成空格
-        text = text.replaceAll("\\n", "<br>");
-        return text.replaceAll("\\\\", " ");
+        // 将\n回车换成html的回车
+        return text.replaceAll("\\n", "<br>");
     }
 }
