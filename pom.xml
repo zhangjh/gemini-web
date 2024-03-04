@@ -31,12 +31,17 @@
         <dependency>
             <groupId>me.zhangjh</groupId>
             <artifactId>share</artifactId>
-            <version>2.0.4</version>
+            <version>2.0.5</version>
         </dependency>
         <dependency>
             <groupId>me.zhangjh</groupId>
             <artifactId>gemini.sdk</artifactId>
             <version>1.4</version>
+        </dependency>
+        <dependency>
+            <groupId>me.zhangjh</groupId>
+            <artifactId>chatgpt-starter</artifactId>
+            <version>2.0.5</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
