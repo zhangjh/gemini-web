@@ -66,8 +66,6 @@ public class AzureService {
     private static final AtomicReference<StringBuilder> TTS_BUFFER = new AtomicReference<>(new StringBuilder());
     private static final StringBuilder ANSWER_BUFFER = new StringBuilder();
 
-    private volatile boolean playing = false;
-
     @Value("${SPEECH_KEY}")
     private String speechKey;
 
@@ -158,6 +156,7 @@ public class AzureService {
 
     private void executeChatGptTask(String question) {
         log.info("question: {}", question);
+        playContent("好的，让我思考一下......");
         ChatRequest chatRequest = new ChatRequest();
         chatRequest.setModel("gpt-4");
         List<Message> messages = new ArrayList<>();
@@ -258,7 +257,6 @@ public class AzureService {
         try (SpeechSynthesisResult result = ttsSynthesizer.SpeakTextAsync(text).get()) {
             if (result.getReason() == ResultReason.SynthesizingAudioCompleted) {
                 log.info("Speech synthesized for text: {}", text);
-                playing = true;
             } else if (result.getReason() == ResultReason.Canceled) {
                 SpeechSynthesisCancellationDetails cancellation = SpeechSynthesisCancellationDetails.fromResult(result);
                 log.info("CANCELED: SpeechSynthesis was canceled: Reason=" + cancellation.getReason());
@@ -269,6 +267,5 @@ public class AzureService {
         } catch (Exception e) {
             log.error("playContent exception: ", e);
         }
-        playing = false;
     }
 }
