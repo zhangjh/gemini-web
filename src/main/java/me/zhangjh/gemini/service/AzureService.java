@@ -70,7 +70,7 @@ public class AzureService {
 
     private volatile boolean playing = false;
 
-    private Executor executor = Executors.newFixedThreadPool(2);
+    private Executor executor = Executors.newFixedThreadPool(1);
 
     @Value("${SPEECH_KEY}")
     private String speechKey;
@@ -187,8 +187,8 @@ public class AzureService {
 
     private void doTask(String question) {
         log.info("question: {}", question);
-        playContent("好的，让我思考一下......");
-        executeChatGptTask(question);
+        new Thread(() -> playContent("好的，让我思考一下......")).start();
+        new Thread(() -> executeChatGptTask(question)).start();
 //        executeGeminiTask(question);
     }
 
