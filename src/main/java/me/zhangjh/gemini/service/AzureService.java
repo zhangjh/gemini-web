@@ -251,6 +251,7 @@ public class AzureService {
                     playContent(TTS_BUFFER.toString());
                     // 重置标记
                     firstStreamPlayed = false;
+                    TTS_BUFFER.get().setLength(0);
                 }
                 String answer = ANSWER_BUFFER.toString();
                 // maximum 10, remove oldest two
@@ -260,6 +261,7 @@ public class AzureService {
                 }
                 CONTEXT.add(ChatContent.buildBySingleText(question, RoleEnum.user.name()));
                 CONTEXT.add(ChatContent.buildBySingleText(answer, RoleEnum.model.name()));
+                ANSWER_BUFFER.setLength(0);
             } else {
                 ANSWER_BUFFER.append(response);
                 // 流式答案
@@ -270,8 +272,8 @@ public class AzureService {
                         String tmp = TTS_BUFFER.get().toString();
                         int index = tmp.indexOf(symbol);
                         if(index != -1) {
-                            playContent(tmp.substring(0, index));
-                            TTS_BUFFER.set(new StringBuilder(tmp.substring(index)));
+                            playContent(tmp.substring(0, index + 1));
+                            TTS_BUFFER.set(new StringBuilder(tmp.substring(index + 1)));
                             firstStreamPlayed = true;
                             break;
                         }
