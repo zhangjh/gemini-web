@@ -116,56 +116,54 @@ public class AzureService {
         // todo: 多语音唤醒
         initSpeech();
 //        monitorInterrupt();
-        executor.execute(() -> {
-            ClassPathResource resource = new ClassPathResource(wakeupModelFile);
-            String fileName = wakeupModelFile.substring(0, wakeupModelFile.lastIndexOf("."));
-            log.info("wakeUpFilePath: {}, fileName: {}", wakeupModelFile, fileName);
-            try (KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromStream(resource.getInputStream(),
-                    fileName, false)) {
-                while (true) {
-                    Future<KeywordRecognitionResult> resultFuture = keywordRecognizer.recognizeOnceAsync(recognitionModel);
-                    KeywordRecognitionResult result = resultFuture.get();
-                    // 识别到唤醒词
-                    if (result.getReason() == ResultReason.RecognizedKeyword) {
-                        log.info("Keyword recognized: {}", result.getText());
-                        playContent("主人我在，有什么吩咐？");
-                        log.info("播放应答语");
-                        long startTime = System.currentTimeMillis();
-                        while (true) {
-                            // 15s内没有识别到语音需要重新唤醒
-                            if (System.currentTimeMillis() - startTime > 15000) {
-                                playContent("主人你很久没有说话了，我先退下了，下次再见。");
-                                log.info("超时退出监听");
+        ClassPathResource resource = new ClassPathResource(wakeupModelFile);
+        String fileName = wakeupModelFile.substring(0, wakeupModelFile.lastIndexOf("."));
+        log.info("wakeUpFilePath: {}, fileName: {}", wakeupModelFile, fileName);
+        try (KeywordRecognitionModel recognitionModel = KeywordRecognitionModel.fromStream(resource.getInputStream(),
+                fileName, false)) {
+            while (true) {
+                Future<KeywordRecognitionResult> resultFuture = keywordRecognizer.recognizeOnceAsync(recognitionModel);
+                KeywordRecognitionResult result = resultFuture.get();
+                // 识别到唤醒词
+                if (result.getReason() == ResultReason.RecognizedKeyword) {
+                    log.info("Keyword recognized: {}", result.getText());
+                    playContent("主人我在，有什么吩咐？");
+                    log.info("播放应答语");
+                    long startTime = System.currentTimeMillis();
+                    while (true) {
+                        // 15s内没有识别到语音需要重新唤醒
+                        if (System.currentTimeMillis() - startTime > 15000) {
+                            playContent("主人你很久没有说话了，我先退下了，下次再见。");
+                            log.info("超时退出监听");
+                            break;
+                        }
+                        Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
+                        SpeechRecognitionResult speechRecognitionResult = task.get();
+                        if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
+                            String question = speechRecognitionResult.getText();
+                            // 识别到的是退出词，结束多轮对话回到待唤醒状态
+                            boolean match = EXIT_WORDS.stream().anyMatch(question::contains);
+                            if(match) {
+                                speechRecognizer.stopContinuousRecognitionAsync();
+                                playContent("好的，下次再见。");
+                                log.info("退出命令退出监听");
                                 break;
                             }
-                            Future<SpeechRecognitionResult> task = speechRecognizer.recognizeOnceAsync();
-                            SpeechRecognitionResult speechRecognitionResult = task.get();
-                            if (speechRecognitionResult.getReason() == ResultReason.RecognizedSpeech) {
-                                String question = speechRecognitionResult.getText();
-                                // 识别到的是退出词，结束多轮对话回到待唤醒状态
-                                boolean match = EXIT_WORDS.stream().anyMatch(question::contains);
-                                if(match) {
-                                    speechRecognizer.stopContinuousRecognitionAsync();
-                                    playContent("好的，下次再见。");
-                                    log.info("退出命令退出监听");
-                                    break;
-                                }
-                                log.info("RECOGNIZED: Text=" + question);
-                                if(StringUtils.isNotEmpty(question)) {
-                                    doTask(question);
-                                    // 识别到语音后续期
-                                    startTime = System.currentTimeMillis();
-                                }
-                            } else {
-                                log.info("NOMATCH: Speech could not be recognized.");
+                            log.info("RECOGNIZED: Text=" + question);
+                            if(StringUtils.isNotEmpty(question)) {
+                                doTask(question);
+                                // 识别到语音后续期
+                                startTime = System.currentTimeMillis();
                             }
+                        } else {
+                            log.info("NOMATCH: Speech could not be recognized.");
                         }
                     }
                 }
-            } catch (Exception e) {
-                e.printStackTrace();
             }
-        });
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void initSpeech() {
