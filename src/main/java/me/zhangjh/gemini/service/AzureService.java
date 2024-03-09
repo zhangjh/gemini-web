@@ -186,8 +186,8 @@ public class AzureService {
     private void doTask(String question) {
         log.info("question: {}", question);
         new Thread(() -> playContent("好的，让我思考一下......")).start();
-        executeChatGptTask(question);
-//        executeGeminiTask(question);
+//        executeChatGptTask(question);
+        executeGeminiTask(question);
     }
 
     private void executeChatGptTask(String question) {
